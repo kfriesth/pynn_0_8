@@ -470,7 +470,7 @@ class Population(common.Population):
                 # Add cluster to dictionary
                 self._synapse_clusters[s_type] = c
 
-    def _build_nets(self, nets, net_keys):
+    def _build_nets(self, frontend):
         # If population has no  neural cluster, skip
         if self._neural_cluster is None:
             return
@@ -488,24 +488,22 @@ class Population(common.Population):
 
         # Loop through each neuron vertex that makes up population
         for n_vert in self._neural_cluster.verts:
-            # Get subset of the post-synaptic synapse vertices
-            # that need to be connected to this neuron vertex
-            sub_post_s_verts = [s for s in post_s_verts
-                                if n_vert in s.incoming_connections[self]]
+            # Loop through post-synaptic synapse vertices
+            for s_vert in post_s_verts:
+                # If this synapse vertex doesn't need to be
+                # connected to this neuron vertex, skip
+                if n_vert not in s_vert.incoming_connections[self]:
+                    continue
 
-            # If there are any post-synaptic vertices
-            if len(sub_post_s_verts) > 0:
-                # Create a key for this source neuron vertex
-                net_key = (n_vert.routing_key, n_vert.routing_mask)
-
-                # Create a net connecting neuron vertex to synapse vertices
+                # Calculate traffic weight based on
+                # mean firing rate of this population
                 mean_firing_rate = self.spinnaker_config.mean_firing_rate
-                net = Net(n_vert, sub_post_s_verts,
-                          mean_firing_rate * len(n_vert.neuron_slice))
+                traffic_weight = mean_firing_rate * len(n_vert.neuron_slice)
 
-                # Add net to list and associate with key
-                nets.append(net)
-                net_keys[net] = net_key
+                # Add an edge to the front end representing this connection
+                front_end.add_machine_edge(
+                    MachineEdge(n_vert, s_vert,
+                                traffic_weight=traffic_weight))
 
     def _convergent_connect(self, presynaptic_indices, postsynaptic_index,
                             matrix_rows, weight_range,

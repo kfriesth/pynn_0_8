@@ -256,10 +256,8 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         logger.info("Building nets")
 
         # Loop through all populations and build nets
-        nets = []
-        net_keys = {}
         for pop in self.populations:
-            pop._build_nets(nets, net_keys)
+            pop._build_nets(self)
 
         # Allocate buffers for SDRAM-based communication between vertices
         logger.info("Allocating population output buffers")
