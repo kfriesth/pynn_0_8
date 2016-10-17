@@ -39,8 +39,7 @@ class CurrentInputCluster(object):
 
     def __init__(self, cell_type, parameters, initial_values, sim_timestep_ms,
                  timer_period_us, sim_ticks, indices_to_record, config,
-                 receptor_index, vertex_load_applications,
-                 vertex_run_applications, vertex_resources,
+                 receptor_index, frontend,
                  post_synaptic_width, pop_size):
         # Create standard regions
         self.regions = {}
@@ -74,16 +73,11 @@ class CurrentInputCluster(object):
             logger.debug("\t\t\tPost slice %s: %u bytes SDRAM",
                          str(post_slice), sdram)
 
-            # Build input vert and add to list
-            input_vert = InputVertex(post_slice, receptor_index)
+            # Build input vert, add to list and add to frontend
+            input_vert = InputVertex(post_slice, receptor_index, sdram,
+                                     current_input_app)
             self.verts.append(input_vert)
-
-            # Add application to dictionary
-            vertex_run_applications[input_vert] = current_input_app
-
-            # Add resources to dictionary
-            # **TODO** add SDRAM
-            vertex_resources[input_vert] = {machine.Cores: 1, machine.SDRAM: sdram}
+            frontend.add_machine_vertex(input_vert)
 
     # --------------------------------------------------------------------------
     # Public methods

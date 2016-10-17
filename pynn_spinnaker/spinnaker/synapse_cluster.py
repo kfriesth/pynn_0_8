@@ -7,7 +7,6 @@ import math
 import numpy as np
 from os import path
 import regions
-from rig import machine
 import sys
 
 # Import classes
@@ -94,17 +93,14 @@ class Regions(enum.IntEnum):
 # Vertex
 # ----------------------------------------------------------------------------
 class Vertex(InputVertex):
-    def __init__(self, post_neuron_slice, receptor_index):
+    def __init__(self, post_neuron_slice, receptor_index,
+                 incoming_connections, sdram, app_name):
         # Superclass
-        super(Vertex, self).__init__(post_neuron_slice, receptor_index)
+        super(Vertex, self).__init__(post_neuron_slice, receptor_index,
+                                     sdram, app_name)
 
         self.back_prop_in_verts = []
-
-        self.incoming_connections = defaultdict(list)
-
-    def add_connection(self, pre_pop, pre_neuron_vertex):
-        self.incoming_connections[pre_pop].append(pre_neuron_vertex)
-
+        self.incoming_connections = incoming_connections
 
 # ------------------------------------------------------------------------------
 # SynapseCluster
@@ -131,8 +127,7 @@ class SynapseCluster(object):
     def __init__(self, sim_timestep_ms, timer_period_us, sim_ticks,
                  max_delay_ms, config, post_pop_size, synapse_model,
                  receptor_index, synaptic_projections,
-                 vertex_load_applications, vertex_run_applications,
-                 vertex_resources, post_synaptic_width):
+                 frontend, post_synaptic_width):
         # Dictionary of regions
         self.regions = {}
         self.regions[Regions.system] = regions.System(timer_period_us,
@@ -183,7 +178,6 @@ class SynapseCluster(object):
         # Loop through the post-slices
         generate_matrix_on_chip = False
         self.verts = []
-        vert_sdram = []
         for post_slice in self.post_slices:
             logger.debug("\t\t\tPost slice:%s", str(post_slice))
 
@@ -191,7 +185,7 @@ class SynapseCluster(object):
             # projections of this type
             vert_event_rate = 0.0
             vert_sdram_bytes = 0
-            vert = Vertex(post_slice, receptor_index)
+            vert_incoming_connections = defaultdict(list)
             for proj in synaptic_projections:
                 logger.debug("\t\t\t\tProjection:%s", proj.label)
 
@@ -234,7 +228,7 @@ class SynapseCluster(object):
                                  total_synapses, pre_rate, sdram_bytes)
 
                     # Add this connection to the synapse vertex
-                    vert.add_connection(proj.pre, pre_vertex)
+                    vert_incoming_connections[proj.pre].append(pre_vertex)
 
                     # Add event rate and SDRAM to totals
                     # for current synapse processor
@@ -246,26 +240,41 @@ class SynapseCluster(object):
                     # than the 16mb the key lookup data structure can address
                     if (vert_event_rate > synapse_model._max_synaptic_event_rate
                         or vert_sdram_bytes > (16 * 1024 * 1024)):
-                        # Add current synapse vertex to list
+                        # Create vertex
+                        vert = Vertex(post_slice, receptor_index,
+                                      vert_incoming_connections,
+                                      vert_sdram_bytes, synapse_app)
+
+                        # Add to list and frontend
                         self.verts.append(vert)
-                        vert_sdram.append(vert_sdram_bytes)
+                        frontend.add_machine_vertex(vert)
+
                         logger.debug("\t\t\t\t\t\tVertex: total event rate:%f Hz, SDRAM:%u bytes",
                                      vert_event_rate, vert_sdram_bytes)
-                        # Create replacement and reset event rate and SDRAM
-                        vert = Vertex(post_slice, receptor_index)
+
+                        # Create new list of incoming connections
+                        # for next vert and reset counters
+                        vert_incoming_connections = defaultdict(list)
                         vert_event_rate = 0.0
                         vert_sdram_bytes = 0
 
             # If the last synapse vertex created had any incoming connections
-            if len(vert.incoming_connections) > 0:
+            if len(vert_incoming_connections) > 0:
+                # Create vertex
+                vert = Vertex(post_slice, receptor_index,
+                              vert_incoming_connections,
+                              vert_sdram_bytes, synapse_app)
+
+                # Add to list and frontend
                 self.verts.append(vert)
-                vert_sdram.append(vert_sdram_bytes)
+                frontend.add_machine_vertex(vert)
                 logger.debug("\t\t\t\t\t\tVertex: total event rate:%f Hz, SDRAM:%u bytes",
                              vert_event_rate, vert_sdram_bytes)
 
         logger.debug("\t\t\t%u synapse vertices", len(self.verts))
 
         # If any matrices should be generated on chip, show message
+        '''
         if generate_matrix_on_chip:
             # Find path to connection builder aplx
             connection_builder_app = resource_filename(
@@ -273,19 +282,8 @@ class SynapseCluster(object):
                 "standardmodels/binaries/connection_builder.aplx")
             logger.debug("\t\t\tConnection builder application:%s",
                          connection_builder_app)
-
-        # Loop through synapse vertices
-        for v, s in zip(self.verts, vert_sdram):
-            # Add application to dictionary
-            vertex_run_applications[v] = synapse_app
-
-            # Add connection builder app
-            if generate_matrix_on_chip:
-                vertex_load_applications[v] = connection_builder_app
-
-            # Add resources to dictionary
-            vertex_resources[v] = {machine.Cores: 1, machine.SDRAM: s}
-
+        '''
+        
     # --------------------------------------------------------------------------
     # Public methods
     # --------------------------------------------------------------------------
@@ -543,7 +541,7 @@ class SynapseCluster(object):
             out_buffers
 
         region_arguments[Regions.delay_buffer].kwargs["sub_matrix_props"] =\
-            sub_matrix_props
+            sub_matrix_propsmachine_controlle
 
         region_arguments[Regions.plasticity].kwargs["fixed_point"] =\
             weight_fixed_point

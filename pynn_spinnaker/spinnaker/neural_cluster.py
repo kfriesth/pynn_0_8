@@ -7,6 +7,10 @@ from rig import machine
 
 # Import classes
 from collections import defaultdict
+from pacman.model.graphs.machine.impl.machine_vertex \
+    import MachineVertex
+from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
+    import AbstractHasAssociatedBinary
 from utils import Args
 
 # Import functions
@@ -42,8 +46,9 @@ class Regions(enum.IntEnum):
 # ----------------------------------------------------------------------------
 # Vertex
 # ----------------------------------------------------------------------------
-class Vertex(object):
-    def __init__(self, parent_keyspace, neuron_slice, pop_index, vert_index):
+class Vertex(MachineVertex, AbstractHasAssociatedBinary):
+    def __init__(self, parent_keyspace, neuron_slice, pop_index, vert_index,
+                 sdram, app_name):
         self.neuron_slice = neuron_slice
 
         # Build child keyspaces for spike and
@@ -58,12 +63,14 @@ class Vertex(object):
         self.input_verts = []
         self.back_prop_out_buffers = None
         self.region_memory = None
+        self.app_name = app_name
 
-    # ------------------------------------------------------------------------
-    # Magic methods
-    # ------------------------------------------------------------------------
-    def __str__(self):
-        return "<neuron slice:%s>" % (str(self.neuron_slice))
+        # Superclass
+        # **NOTE** as vertex partitioning is already done,
+        # only SDRAM is required for subsequent placing decisions
+        MachineVertex.__init__(
+            self, label="<neuron slice:%s>" % (str(self.neuron_slice)
+            resources_required=ResourceContainer(sdram=SDRAMResource(sdram)))
 
     # ------------------------------------------------------------------------
     # Public methods
@@ -144,8 +151,7 @@ class NeuralCluster(object):
     def __init__(self, pop_id, cell_type, parameters, initial_values,
                  sim_timestep_ms, timer_period_us, sim_ticks,
                  record_sample_interval, indices_to_record, config,
-                 vertex_load_applications, vertex_run_applications,
-                 vertex_resources, keyspace, post_synaptic_width,
+                 frontend, keyspace, post_synaptic_width,
                  requires_back_prop, pop_size):
         # Create standard regions
         self.regions = {}
@@ -203,29 +209,25 @@ class NeuralCluster(object):
         # Split population slice
         neuron_slices = split_slice(pop_size, post_synaptic_width)
 
-        # Build neuron vertices for each slice,
-        # allocating a keyspace for each vertex
-        self.verts = [Vertex(keyspace, neuron_slice, pop_id, vert_id)
-                      for vert_id, neuron_slice in enumerate(neuron_slices)]
-
         # Get neuron executable name
         neuron_app = get_model_executable_filename(
             "neuron_", cell_type, config.num_profile_samples is not None)
 
         logger.debug("\t\tNeuron application:%s", neuron_app)
-        logger.debug("\t\t%u neuron vertices", len(self.verts))
+        logger.debug("\t\t%u neuron vertices", len(neuron_slices))
 
-        # Loop through neuron vertices and their corresponding resources
-        for v in self.verts:
-            # Add application to dictionary
-            vertex_run_applications[v] = neuron_app
 
-            # Estimate SDRAM usage
-            sdram = self._estimate_sdram(v.neuron_slice)
-            logger.debug("\t\t\tVertex %s: %u bytes SDRAM", v, sdram)
+        # Build neuron vertices for each slice,
+        # allocating a keyspace for each vertex
+        self.verts = []
+        for vert_id, neuron_slice in enumerate(neuron_slices):
+            # Create vertex
+            vert = Vertex(keyspace, neuron_slice, pop_id, vert_id,
+                          self._estimate_sdram(v.neuron_slice), neuron_app)
 
-            # Add resources to dictionary
-            vertex_resources[v] = {machine.Cores: 1, machine.SDRAM: sdram}
+            # Add to frontend and verts list
+            frontend.add_machine_vertex(vert)
+            self.verts.append(vert)
 
     # --------------------------------------------------------------------------
     # Public methods

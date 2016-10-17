@@ -4,20 +4,22 @@ import logging
 import math
 import numpy as np
 import time
-from rig import machine
+#from rig import machine
 
 # Import classes
 from collections import defaultdict
 from pyNN import common
-from rig.bitfield import BitField
-from rig.machine_control.consts import AppState, signal_types, AppSignal, MessageType
-from rig.machine_control.machine_controller import MachineController
-from rig.place_and_route.machine import Cores
-from rig.place_and_route.constraints import SameChipConstraint
+from spinn_front_end_common.interface.spinnaker_main_interface import \
+    SpinnakerMainInterface
+#from rig.bitfield import BitField
+#from rig.machine_control.consts import AppState, signal_types, AppSignal, MessageType
+#from rig.machine_control.machine_controller import MachineController
+#from rig.place_and_route.machine import Cores
+#from rig.place_and_route.constraints import SameChipConstraint
 
 # Import functions
-from rig.place_and_route import place_and_route_wrapper
-from rig.place_and_route.utils import build_application_map
+#from rig.place_and_route import place_and_route_wrapper
+#from rig.place_and_route.utils import build_application_map
 from six import iteritems, itervalues
 
 logger = logging.getLogger("pynn_spinnaker")
@@ -38,7 +40,7 @@ class ID(int, common.IDMixin):
 # ----------------------------------------------------------------------------
 # State
 # ----------------------------------------------------------------------------
-class State(common.control.BaseState):
+class State(common.control.BaseState, SpinnakerMainInterface):
     # These are required to be present for various
     # bits of PyNN, but not really relevant for SpiNNaker
     mpi_rank = 0
@@ -46,9 +48,6 @@ class State(common.control.BaseState):
 
     def __init__(self):
         common.control.BaseState.__init__(self)
-        self.machine_controller = None
-        self.spalloc_job = None
-        self.system_info = None
         self.dt = 0.1
 
         self.clear()
@@ -99,43 +98,8 @@ class State(common.control.BaseState):
         self.segment_counter += 1
 
     def stop(self):
-        if self.machine_controller is not None and self.stop_on_spinnaker:
-            logger.info("Stopping SpiNNaker application")
-            self.machine_controller.send_signal("stop")
-            self.machine_controller = None
-
-        # Destroy spalloc job if we have one
-        if self.spalloc_job is not None:
-            logger.info("Destroying spalloc job")
-            self.spalloc_job.destroy()
-            self.spalloc_job = None
-
-    def _wait_for_transition(self, placements, allocations,
-                             from_state, to_state,
-                             num_verts, timeout=5.0):
-        while True:
-            # If no cores are still in from_state, stop
-            if self.machine_controller.count_cores_in_state(from_state) == 0:
-                break
-
-            # Wait a bit
-            time.sleep(1.0)
-
-        # Wait for all cores to reach to_state
-        cores_in_to_state =\
-            self.machine_controller.wait_for_cores_to_reach_state(
-                to_state, num_verts, timeout=timeout)
-        if cores_in_to_state != num_verts:
-            # Loop through all placed vertices
-            for vertex, (x, y) in iteritems(placements):
-                p = allocations[vertex][machine.Cores].start
-                status = self.machine_controller.get_processor_status(p, x, y)
-                if status.cpu_state is not to_state:
-                    print("Core ({}, {}, {}) in state {!s}".format(
-                        x, y, p, status))
-                    print self.machine_controller.get_iobuf(p, x, y)
-            raise Exception("Unexpected core failures "
-                            "before reaching %s state (%u/%u)." % (to_state, cores_in_to_state, num_verts))
+        # **TODO** parameters
+        SpinnakerMainInterface.stop(self)
 
     def _estimate_constraints(self, hardware_timestep_us):
         logger.info("Estimating constraints")
@@ -265,24 +229,20 @@ class State(common.control.BaseState):
         logger.info("Allocating neuron clusters")
         for pop_id, pop in enumerate(self.populations):
             logger.debug("\tPopulation:%s", pop.label)
-            pop._create_neural_cluster(pop_id, hardware_timestep_us, duration_timesteps,
-                                       vertex_load_applications, vertex_run_applications,
-                                       vertex_resources, keyspace)
+            pop._create_neural_cluster(pop_id, hardware_timestep_us,
+                                       duration_timesteps, self, keyspace)
 
         logger.info("Allocating synapse clusters")
         for pop in self.populations:
             logger.debug("\tPopulation:%s", pop.label)
-            pop._create_synapse_clusters(hardware_timestep_us, duration_timesteps,
-                                       vertex_load_applications, vertex_run_applications,
-                                       vertex_resources)
+            pop._create_synapse_clusters(hardware_timestep_us,
+                                         duration_timesteps, self)
 
         logger.info("Allocating current input clusters")
         for proj in self.projections:
             # Create cluster
             c = proj._create_current_input_cluster(
-                hardware_timestep_us, duration_timesteps,
-                vertex_load_applications, vertex_run_applications,
-                vertex_resources)
+                hardware_timestep_us, duration_timesteps, self)
 
             # Add cluster to data structures
             if c is not None:
@@ -304,79 +264,6 @@ class State(common.control.BaseState):
         net_keys = {}
         for pop in self.populations:
             pop._build_nets(nets, net_keys)
-
-        # If there isn't already a machine controller
-        # **TODO** this probably doesn't belong here
-        if self.machine_controller is None:
-            logger.info("Connecting to SpiNNaker")
-
-            # If no host is specified attempt to use spalloc
-            if self.spinnaker_hostname is None:
-                from spalloc import Job
-
-                # Fudge number of cores from number of vertices
-                num_cores = len(vertex_run_applications) *\
-                    self.allocation_fudge_factor
-
-                # Divide down to get boards
-                num_boards = int(np.ceil((num_cores / 16.0) / 48.0))
-                logger.info("Estimate %u cores and %u boards required",
-                            num_cores, num_boards)
-
-                # Request the job
-                self.spalloc_job = Job(num_boards)
-                logger.info("Allocated spalloc job ID %u",
-                            self.spalloc_job.id)
-
-                # Wait until we're given the machine
-                logger.info("Waiting for spalloc machine allocation")
-                self.spalloc_job.wait_until_ready()
-
-                # spalloc recommends a slight delay before attempting to boot the
-                # machine, later versions of spalloc server may relax this
-                # requirement.
-                time.sleep(5.0)
-
-                # Store the hostname
-                hostname = self.spalloc_job.hostname
-                logger.info("Using %u board(s) of \"%s\" (%s)",
-                            len(self.spalloc_job.boards),
-                            self.spalloc_job.machine_name,
-                            hostname)
-            # Otherwise, use pre-configured hostname
-            else:
-                hostname = self.spinnaker_hostname
-
-            # Get machine controller from connected SpiNNaker board and boot
-            self.machine_controller = MachineController(hostname)
-            self.machine_controller.boot()
-
-            # Get system info
-            self.system_info = self.machine_controller.get_system_info()
-            logger.debug("Found %u chip machine", len(self.system_info))
-
-        # Place-and-route
-        # **NOTE** don't create application map at this stage
-        logger.info("Placing and routing")
-        placements, allocations, run_app_map, routing_tables =\
-            place_and_route_wrapper(vertex_resources, vertex_run_applications,
-                                    nets, net_keys, self.system_info, constraints)
-
-        # Convert placement values to a set to get unique list of chips
-        unique_chips = set(itervalues(placements))
-        logger.info("Placed on %u cores (%u chips)",
-                    len(placements), len(unique_chips))
-        logger.debug(list(itervalues(placements)))
-
-        # If software watchdog is disabled, write zero to each chip in
-        # placement's SV struct, otherwise, write default from SV struct file
-        wdog = (0 if self.disable_software_watchdog else
-                self.machine_controller.structs["sv"]["soft_wdog"].default)
-        for x, y in unique_chips:
-            logger.debug("Setting software watchdog to %u for chip %u, %u",
-                         wdog, x, y)
-            self.machine_controller.write_struct_field("sv", "soft_wdog",
-                                                       wdog, x, y)
 
         # Allocate buffers for SDRAM-based communication between vertices
         logger.info("Allocating population output buffers")

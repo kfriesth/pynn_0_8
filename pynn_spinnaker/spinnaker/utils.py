@@ -10,6 +10,10 @@ from os import path
 
 # Import classes
 from collections import namedtuple, Iterable
+from pacman.model.graphs.machine.impl.machine_vertex \
+    import MachineVertex
+from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
+    import AbstractHasAssociatedBinary
 
 # Import functions
 from copy import (copy, deepcopy)
@@ -36,20 +40,24 @@ InputBuffer = namedtuple("InputBuffer",
 # ----------------------------------------------------------------------------
 # InputVertex
 # ----------------------------------------------------------------------------
-class InputVertex(object):
-    def __init__(self, post_neuron_slice, receptor_index):
+class InputVertex(MachineVertex, AbstractHasAssociatedBinary):
+    def __init__(self, cluster, post_neuron_slice, receptor_index,
+                 sdram, app_name):
         self.post_neuron_slice = post_neuron_slice
         self.weight_fixed_point = None
         self.receptor_index = receptor_index
         self.out_buffers = None
         self.region_memory = None
+        self.app_name = app_name
 
-    # ------------------------------------------------------------------------
-    # Magic methods
-    # ------------------------------------------------------------------------
-    def __str__(self):
-        return ("<post neuron slice:%s, receptor index:%u>" %
-                (str(self.post_neuron_slice), self.receptor_index))
+        # Superclass
+        # **NOTE** as vertex partitioning is already done,
+        # only SDRAM is required for subsequent placing decisions
+        label = "<post neuron slice:%s, receptor index:%u>" %
+            (str(self.post_neuron_slice), self.receptor_index)
+        MachineVertex.__init__(
+            self, label=label,
+            resources_required=ResourceContainer(sdram=SDRAMResource(sdram)))
 
     # ------------------------------------------------------------------------
     # Public methods
@@ -283,7 +291,7 @@ def get_model_comparable(value):
 
 def load_regions(regions, region_arguments, machine_controller, core):
     # Calculate region size
-    size, allocs = sizeof_regions_named(regions, region_arguments)
+    size = sizeof_regions_named(regions, region_arguments)
 
     logger.debug("\t\t\t\t\tRegion size = %u bytes", size)
 
@@ -392,14 +400,7 @@ def sizeof_regions_named(regions, region_args, include_app_ptr=True):
         # Get the arguments for the region
         args, kwargs = region_args[key]
 
-        # Get size of region and any extra allocations it requires
-        region_size_allocs = region.sizeof_padded(*args, **kwargs)
-
         # Add size to total and include allocations in dictionary
-        if isinstance(region_size_allocs, Iterable):
-            size += region_size_allocs[0]
-            allocations.update(region_size_allocs[1])
-        else:
-            size += region_size_allocs
+        size += region.sizeof_padded(*args, **kwargs)
 
-    return size, allocations
+    return size
