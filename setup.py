@@ -12,7 +12,7 @@ def read_file(filename, **kwargs):
 
 def replace_local_hyperlinks(
         text,
-        base_url="https://github.com/project-rig/pynn_spinnaker/blob/master/"
+        base_url="https://github.com/SpiNNakerManchester/pynn_0_8/blob/master/"
         ):
     """Replace local hyperlinks in RST with absolute addresses using the given
     base URL.
@@ -57,13 +57,13 @@ def replace_local_hyperlinks(
     return text
 
 setup(
-    name="pynn_spinnaker",
-    version="0.4.0",
+    name="pynn_spinnaker_0_8",
+    version="0.1.0",
     packages=find_packages(),
     package_data={'pynn_spinnaker': ['model_binaries/*.aplx']},
 
     # Metadata for PyPi
-    url="https://github.com/project-rig/pynn_spinnaker",
+    url="https://github.com/SpiNNakerManchester/pynn_0_8",
     author="University of Manchester",
     description="Tools for simulating neural models generated using PyNN 0.8 on "
                 "the SpiNNaker platform",
@@ -90,7 +90,7 @@ setup(
     keywords="spinnaker pynn neural simulation",
 
     # Requirements
-    install_requires=["pynn>=0.8", "rig>=2.0.0, <3.0.0",
+    install_requires=["pynn>=0.8", "SpiNNFrontEndCommon",
                       "bitarray>=0.8.1, <1.0.0"],
     zip_safe=False,  # Partly for performance reasons
 
