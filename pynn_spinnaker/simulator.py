@@ -8,6 +8,8 @@ import time
 
 # Import classes
 from collections import defaultdict
+from pacman.model.constraints.placer_constraints\
+    .placer_same_chip_as_constraint import PlacerSameChipAsConstraint
 from pyNN import common
 from spinn_front_end_common.interface.spinnaker_main_interface import \
     SpinnakerMainInterface
@@ -144,8 +146,8 @@ class State(common.control.BaseState, SpinnakerMainInterface):
                     logger.debug("\t\tConstraining neuron vert and %u input "
                                  "verts to same chip", len(n.input_verts))
 
-                    # Build same chip constraint and add to list
-                    constraints.append(SameChipConstraint(n.input_verts + [n]))
+                    # Build same chip constraint and add to neuron vertex
+                    n.add_constraint(PlacerSameChipAsConstraint(n.input_verts))
 
             # Loop through synapse clusters
             for s_type, s_cluster in iteritems(pop._synapse_clusters):
@@ -216,12 +218,6 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         keyspace.add_field("vert_index", tags=("routing", "transmission"))
         keyspace.add_field("flush", length=1, start_at=10, tags="transmission")
         keyspace.add_field("neuron_id", length=10, start_at=0)
-
-        # Create empty dictionaries to contain Rig mappings
-        # of vertices to  applications and resources
-        vertex_load_applications = {}
-        vertex_run_applications = {}
-        vertex_resources = {}
 
         # Allocate clusters
         # **NOTE** neuron clusters and hence vertices need to be allocated
