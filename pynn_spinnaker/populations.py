@@ -536,7 +536,7 @@ class Population(common.Population):
         for i, w, d in zip(presynaptic_indices, weight, delay_timesteps):
             matrix_rows[i].append(Synapse(w, d, postsynaptic_index))
 
-    def _allocate_out_buffers(self, placements, allocations, machine_controller):
+    def _allocate_out_buffers(self, placements, transceiver, app_id):
         logger.info("\tPopulation label:%s", self.label)
 
          # Loop through synapse types and associated cluster
@@ -545,14 +545,13 @@ class Population(common.Population):
                         s_type.model.__class__.__name__, s_type.receptor)
 
             # Allocate out buffers
-            s_cluster.allocate_out_buffers(placements, allocations,
-                                           machine_controller)
+            s_cluster.allocate_out_buffers(placements, transceiver, app_id)
 
         # If population has a neuron cluster,
         # allow it to allocate any output buffers
         if self._neural_cluster is not None:
-            self._neural_cluster.allocate_out_buffers(placements, allocations,
-                                                      machine_controller)
+            self._neural_cluster.allocate_out_buffers(placements, transceiver,
+                                                      app_id)
 
     def _load_verts(self, placements, allocations,
                     machine_controller, flush_mask):

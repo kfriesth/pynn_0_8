@@ -232,34 +232,27 @@ class NeuralCluster(object):
     # --------------------------------------------------------------------------
     # Public methods
     # --------------------------------------------------------------------------
-    def allocate_out_buffers(self, placements, allocations,
-                             machine_controller):
+    def allocate_out_buffers(self, placements, transceiver, app_id):
         # Loop through vertices
         for v in self.verts:
-            # Get placement and allocation
-            vertex_placement = placements[v]
-            vertex_allocation = allocations[v]
-
-            # Get core this vertex should be run on
-            core = vertex_allocation[machine.Cores]
-            assert (core.stop - core.start) == 1
+            # Get placement
+            # **TODO** how to lookup
+            placement = placements[v]
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
-                            v, vertex_placement[0], vertex_placement[1],
-                            core.start)
+                         v, placement.x, placement.y, placement.p)
 
-            # Select placed chip
-            with machine_controller(x=vertex_placement[0],
-                                    y=vertex_placement[1]):
-                # If back propagation is enabled, allocate two back
-                # propagation out buffers for this neuron vertex
-                if self.regions[Regions.back_prop_output].enabled:
-                    back_prop_buffer_bytes =\
-                        calc_slice_bitfield_words(v.neuron_slice) * 4
-                    v.back_prop_out_buffers = [
-                        machine_controller.sdram_alloc(back_prop_buffer_bytes,
-                                                       clear=True)
-                        for _ in range(2)]
+            # **TODO** zero memory - waiting on https://github.com/SpiNNakerManchester/SpiNNMan/issues/59
+            # If back propagation is enabled, allocate two back
+            # propagation out buffers for this neuron vertex
+            if self.regions[Regions.back_prop_output].enabled:
+                back_prop_buffer_bytes =\
+                    calc_slice_bitfield_words(v.neuron_slice) * 4
+                v.back_prop_out_buffers = [
+                    transceiver.malloc_sdram(placement.x, placement.y,
+                                             back_prop_buffer_bytes,
+                                             app_id=app_id)
+                    for _ in range(2)]
 
     def load(self, placements, allocations, machine_controller):
         # Loop through vertices

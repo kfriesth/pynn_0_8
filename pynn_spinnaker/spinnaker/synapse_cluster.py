@@ -287,32 +287,25 @@ class SynapseCluster(object):
     # --------------------------------------------------------------------------
     # Public methods
     # --------------------------------------------------------------------------
-    def allocate_out_buffers(self, placements, allocations,
-                             machine_controller):
+    def allocate_out_buffers(self, placements, transceiver, app_id):
         # Loop through synapse verts
         for v in self.verts:
-            # Get placement and allocation
-            vertex_placement = placements[v]
-            vertex_allocation = allocations[v]
-
-            # Get core this vertex should be run on
-            core = vertex_allocation[machine.Cores]
-            assert (core.stop - core.start) == 1
+            # Get placement
+            # **TODO** how to lookup
+            placement = placements[v]
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
-                         v, vertex_placement[0], vertex_placement[1],
-                         core.start)
+                         v, placement.x, placement.y, placement.p)
 
-            # Select placed chip
-            with machine_controller(x=vertex_placement[0],
-                                    y=vertex_placement[1]):
-                # Allocate two output buffers
-                # for this synapse population
-                out_buffer_bytes = len(v.post_neuron_slice) * 4
-                v.out_buffers = [
-                    machine_controller.sdram_alloc(out_buffer_bytes,
-                                                   clear=True)
-                    for _ in range(2)]
+            # **TODO** zero memory - waiting on https://github.com/SpiNNakerManchester/SpiNNMan/issues/59
+            # Allocate two output buffers
+            # for this synapse population
+            out_buffer_bytes = len(v.post_neuron_slice) * 4
+            v.out_buffers = [
+                transceiver.malloc_sdram(placement.x, placement.y,
+                                         out_buffer_bytes,
+                                         app_id=app_id)
+                for _ in range(2)]
 
     def load(self, placements, allocations, machine_controller,
              incoming_projections, flush_mask):

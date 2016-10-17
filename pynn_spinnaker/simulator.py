@@ -49,7 +49,9 @@ class State(common.control.BaseState, SpinnakerMainInterface):
     num_processes = 1
 
     def __init__(self):
+        # Superclass
         common.control.BaseState.__init__(self)
+
         self.dt = 0.1
 
         self.clear()
@@ -192,8 +194,20 @@ class State(common.control.BaseState, SpinnakerMainInterface):
                 logger.info("\t\t\tInput buffer overflows:%u",
                             np.sum(stats["input_buffer_overflows"]))
                 logger.info("\t\t\tKey lookup failures:%u",
-                            np.sum(stats["key_lookup_fails"]))
+                         _allocate_algorithm   np.sum(stats["key_lookup_fails"]))
 
+    @algorithm(input_definitions={
+        "transceiver": "MemoryTransceiver",
+        "placements": "MemoryPlacements",
+        "app_id": "APPID"})
+    def _allocate_algorithm(self, transceiver, placements, app_id):
+        # Allocate buffers for SDRAM-based communication between vertices
+        logger.info("Allocating population output buffers")
+        for pop in self.populations:
+            pop._allocate_out_buffers(placements, transceiver, app_id)
+        logger.info("Allocating projection output buffers")
+        for proj in self.projections:
+            proj._allocate_out_buffers(placements, transceiver, app_id)
 
     def _build(self, duration_ms):
         # Convert dt into microseconds and divide by

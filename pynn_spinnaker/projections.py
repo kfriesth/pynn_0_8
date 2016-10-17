@@ -259,8 +259,7 @@ class Projection(common.Projection, ContextMixin):
         return self._connector._estimate_num_synapses(
             pre_slice, post_slice, self.pre.size, self.post.size)
 
-    def _allocate_out_buffers(self, placements, allocations,
-                              machine_controller):
+    def _allocate_out_buffers(self, placements, transceiver, app_id):
          # If projection has no current input cluster, skip
         if self._current_input_cluster is None:
             return
@@ -269,8 +268,7 @@ class Projection(common.Projection, ContextMixin):
                     self.label, self.pre.label)
 
         self._current_input_cluster.allocate_out_buffers(placements,
-                                                         allocations,
-                                                         machine_controller)
+                                                         transceiver, app_id)
 
     def _load_verts(self, placements, allocations, machine_controller):
         # If projection has no current input cluster, skip
