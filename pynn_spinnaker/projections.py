@@ -270,7 +270,7 @@ class Projection(common.Projection, ContextMixin):
         self._current_input_cluster.allocate_out_buffers(placements,
                                                          transceiver, app_id)
 
-    def _load_verts(self, placements, allocations, machine_controller):
+    def _load_verts(self, placements, transceiver, app_id):
         # If projection has no current input cluster, skip
         if self._current_input_cluster is None:
             return
@@ -282,8 +282,8 @@ class Projection(common.Projection, ContextMixin):
         direct_weights = self._build_direct_connection()
 
         # Load
-        self._current_input_cluster.load(placements, allocations,
-                                         machine_controller, direct_weights)
+        self._current_input_cluster.load(placements, transceiver, app_id,
+                                         direct_weights)
 
     def _get_native_rngs(self, synapse_param_name):
         # Get named parameter

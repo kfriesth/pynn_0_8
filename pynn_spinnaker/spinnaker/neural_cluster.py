@@ -254,37 +254,29 @@ class NeuralCluster(object):
                                              app_id=app_id)
                     for _ in range(2)]
 
-    def load(self, placements, allocations, machine_controller):
+    def load(self, placements, transceiver, app_id):
         # Loop through vertices
         for v in self.verts:
             # Get placement and allocation
-            vertex_placement = placements[v]
-            vertex_allocation = allocations[v]
-
-            # Get core this vertex should be run on
-            core = vertex_allocation[machine.Cores]
-            assert (core.stop - core.start) == 1
+            placement = placements[v]
 
             logger.debug("\t\t\tVertex %s (%u, %u, %u): Spike key:%08x, Flush key:%08x",
-                            v, vertex_placement[0], vertex_placement[1],
-                            core.start, v.spike_tx_key, v.flush_tx_key)
+                            v, placement.x, placement.y, placement.p,
+                            v.spike_tx_key, v.flush_tx_key)
 
-            # Select placed chip
-            with machine_controller(x=vertex_placement[0],
-                                    y=vertex_placement[1]):
-                # Get the input buffers from each synapse vertex
-                in_buffers = [
-                    s.get_in_buffer(v.neuron_slice)
-                    for s in v.input_verts]
+            # Get the input buffers from each synapse vertex
+            in_buffers = [
+                s.get_in_buffer(v.neuron_slice)
+                for s in v.input_verts]
 
-                # Get regiona arguments
-                region_arguments = self._get_region_arguments(
-                    v.spike_tx_key, v.flush_tx_key, v.neuron_slice,
-                    in_buffers, v.back_prop_out_buffers)
+            # Get regiona arguments
+            region_arguments = self._get_region_arguments(
+                v.spike_tx_key, v.flush_tx_key, v.neuron_slice,
+                in_buffers, v.back_prop_out_buffers)
 
-                # Load regions
-                v.region_memory = load_regions(self.regions, region_arguments,
-                                               machine_controller, core)
+            # Load regions
+            v.region_memory = load_regions(self.regions, region_arguments,
+                                           placement, transceiver, app_id)
 
     def read_recorded_spikes(self):
         # Loop through all neuron vertices and read spike times into dictionary

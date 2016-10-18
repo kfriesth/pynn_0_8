@@ -553,8 +553,7 @@ class Population(common.Population):
             self._neural_cluster.allocate_out_buffers(placements, transceiver,
                                                       app_id)
 
-    def _load_verts(self, placements, allocations,
-                    machine_controller, flush_mask):
+    def _load_verts(self, placements, transceiver, app_id, flush_mask):
         logger.info("\tPopulation label:%s", self.label)
 
         # Loop through synapse types and associated cluster
@@ -563,14 +562,14 @@ class Population(common.Population):
                         s_type.model.__class__.__name__, s_type.receptor)
 
             # Load vertices that make up cluster
-            s_cluster.load(placements, allocations, machine_controller,
+            s_cluster.load(placements, transceiver, app_id,
                            self.incoming_projections[s_type],
                            flush_mask)
 
         # If population has a neuron cluster, load it
         if self._neural_cluster is not None:
             logger.info("\t\tNeurons")
-            self._neural_cluster.load(placements, allocations, machine_controller)
+            self._neural_cluster.load(placements, transceiver, app_id)
 
     # --------------------------------------------------------------------------
     # Internal SpiNNaker properties

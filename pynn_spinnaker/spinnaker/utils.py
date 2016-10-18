@@ -14,6 +14,7 @@ from pacman.model.graphs.machine.impl.machine_vertex \
     import MachineVertex
 from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
     import AbstractHasAssociatedBinary
+from spinnman.utilities.io.memory_io import MemoryIO
 
 # Import functions
 from copy import (copy, deepcopy)
@@ -289,7 +290,8 @@ def get_model_comparable(value):
     # Otherwise, return value itself
     return (value,)
 
-def load_regions(regions, region_arguments, machine_controller, core):
+def load_regions(regions, region_arguments,
+                 placement, transceiver, app_id):
     # Calculate region size
     size = sizeof_regions_named(regions, region_arguments)
 
@@ -298,10 +300,14 @@ def load_regions(regions, region_arguments, machine_controller, core):
     # Allocate a suitable memory block
     # for this vertex and get memory io
     # **NOTE** this is tagged by core
-    memory_io = machine_controller.sdram_alloc_as_filelike(
-        size, tag=core.start)
+    start_address = transceiver.malloc_sdram(placement.x, placement.y,
+                                             size, app_id, placement.p)
+    end_address = start_address + size
+    memory_io = MemoryIO(transceiver, placement.x, placement.y,
+                         start_address, end_address)
+
     logger.debug("\t\t\t\t\tMemory with tag:%u begins at:%08x",
-                    core.start, memory_io.address)
+                    placement.p, start_address)
 
     # Layout the slice of SDRAM we have been given
     region_memory = create_app_ptr_and_region_files_named(
@@ -317,6 +323,9 @@ def load_regions(regions, region_arguments, machine_controller, core):
 
         # Perform the write
         region.write_subregion_to_file(mem, *args, **kwargs)
+
+    # Close memory IO?
+    memory_io.close()
 
     # Return region memory
     return region_memory

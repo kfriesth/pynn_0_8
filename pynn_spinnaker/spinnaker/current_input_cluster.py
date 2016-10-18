@@ -101,7 +101,7 @@ class CurrentInputCluster(object):
                                          app_id=app_id)
                 for _ in range(2)]
 
-    def load(self, placements, allocations, machine_controller,
+    def load(self, placements, transceiver, app_id,
              direct_weights):
         # Loop through synapse verts
         for v in self.verts:
@@ -109,27 +109,18 @@ class CurrentInputCluster(object):
             v.weight_fixed_point = 15
 
             # Get placement and allocation
-            vertex_placement = placements[v]
-            vertex_allocation = allocations[v]
-
-            # Get core this vertex should be run on
-            core = vertex_allocation[machine.Cores]
-            assert (core.stop - core.start) == 1
+            placement = placements[v]
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
-                         v, vertex_placement[0], vertex_placement[1],
-                         core.start)
+                         v, placement.x, placement.y, placement.p)
 
-            # Select placed chip
-            with machine_controller(x=vertex_placement[0],
-                                    y=vertex_placement[1]):
-                # Get region arguments required to calculate size and write
-                region_arguments = self._get_region_arguments(
-                    v.post_neuron_slice, direct_weights, v.out_buffers)
+            # Get region arguments required to calculate size and write
+            region_arguments = self._get_region_arguments(
+                v.post_neuron_slice, direct_weights, v.out_buffers)
 
-                # Load regions
-                v.region_memory = load_regions(self.regions, region_arguments,
-                                               machine_controller, core)
+            # Load regions
+            v.region_memory = load_regions(self.regions, region_arguments,
+                                           placement, transceiver, app_id)
 
     def read_recorded_spikes(self):
         # Loop through all current input vertices

@@ -4,7 +4,6 @@ import logging
 import math
 import numpy as np
 import time
-#from rig import machine
 
 # Import classes
 from collections import defaultdict
@@ -13,15 +12,8 @@ from pacman.model.constraints.placer_constraints\
 from pyNN import common
 from spinn_front_end_common.interface.spinnaker_main_interface import \
     SpinnakerMainInterface
-#from rig.bitfield import BitField
-#from rig.machine_control.consts import AppState, signal_types, AppSignal, MessageType
-#from rig.machine_control.machine_controller import MachineController
-#from rig.place_and_route.machine import Cores
-#from rig.place_and_route.constraints import SameChipConstraint
 
 # Import functions
-#from rig.place_and_route import place_and_route_wrapper
-#from rig.place_and_route.utils import build_application_map
 from six import iteritems, itervalues
 
 logger = logging.getLogger("pynn_spinnaker")
@@ -42,7 +34,7 @@ class ID(int, common.IDMixin):
 # ----------------------------------------------------------------------------
 # State
 # ----------------------------------------------------------------------------
-class State(common.control.BaseState, SpinnakerMainInterface):
+class State(common.control.BaseState):
     # These are required to be present for various
     # bits of PyNN, but not really relevant for SpiNNaker
     mpi_rank = 0
@@ -52,10 +44,14 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         # Superclass
         common.control.BaseState.__init__(self)
 
+        self.frontend = None
         self.dt = 0.1
 
         self.clear()
 
+    # ----------------------------------------------------------------------------
+    # PyNN State methods
+    # ----------------------------------------------------------------------------
     def run(self, simtime):
         # Build data
         try:
@@ -102,9 +98,47 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         self.segment_counter += 1
 
     def stop(self):
-        # **TODO** parameters
-        SpinnakerMainInterface.stop(self)
+        if self.frontend is not None and self.stop_on_spinnaker:
+            logger.info("Stopping SpiNNaker application")
+            self.frontend.stop()
+            self.frontend = None
 
+    # ----------------------------------------------------------------------------
+    # PACMAN algorithms
+    # ----------------------------------------------------------------------------
+    @algorithm(input_definitions={
+        "placements": "MemoryPlacements",
+        "transceiver": "MemoryTransceiver",
+        "app_id": "APPID"})
+    def _allocate_algorithm(self, placements, transceiver, app_id):
+        # Allocate buffers for SDRAM-based communication between vertices
+        logger.info("Allocating population output buffers")
+        for pop in self.populations:
+            pop._allocate_out_buffers(placements, transceiver, app_id)
+        logger.info("Allocating projection output buffers")
+        for proj in self.projections:
+            proj._allocate_out_buffers(placements, transceiver, app_id)
+
+    @algorithm(input_definitions={
+        "placements": "MemoryPlacements",
+        "transceiver": "MemoryTransceiver",
+        "app_id": "APPID"})
+    def _load_algorithm(self, placements, transceiver, app_id):
+        # Load vertices
+        # **NOTE** projection vertices need to be loaded
+        # first as weight-fixed point is only calculated at
+        # load time and this is required by neuron vertices
+        logger.info("Loading projection vertices")
+        for proj in self.projections:
+            proj._load_verts(placements, transceiver, app_id)
+
+        logger.info("Loading population vertices")
+        for pop in self.populations:
+            pop._load_verts(placements, transceiver, app_id)
+
+    # ----------------------------------------------------------------------------
+    # PyNN SpiNNaker internal methods
+    # ----------------------------------------------------------------------------
     def _estimate_constraints(self, hardware_timestep_us):
         logger.info("Estimating constraints")
 
@@ -194,20 +228,7 @@ class State(common.control.BaseState, SpinnakerMainInterface):
                 logger.info("\t\t\tInput buffer overflows:%u",
                             np.sum(stats["input_buffer_overflows"]))
                 logger.info("\t\t\tKey lookup failures:%u",
-                         _allocate_algorithm   np.sum(stats["key_lookup_fails"]))
-
-    @algorithm(input_definitions={
-        "transceiver": "MemoryTransceiver",
-        "placements": "MemoryPlacements",
-        "app_id": "APPID"})
-    def _allocate_algorithm(self, transceiver, placements, app_id):
-        # Allocate buffers for SDRAM-based communication between vertices
-        logger.info("Allocating population output buffers")
-        for pop in self.populations:
-            pop._allocate_out_buffers(placements, transceiver, app_id)
-        logger.info("Allocating projection output buffers")
-        for proj in self.projections:
-            proj._allocate_out_buffers(placements, transceiver, app_id)
+                            np.sum(stats["key_lookup_fails"]))
 
     def _build(self, duration_ms):
         # Convert dt into microseconds and divide by
@@ -226,12 +247,27 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         # Estimate constraints
         self._estimate_constraints(hardware_timestep_us)
 
+        '''
         # Create a 32-bit keyspace
         keyspace = BitField(32)
         keyspace.add_field("pop_index", tags=("routing", "transmission"))
         keyspace.add_field("vert_index", tags=("routing", "transmission"))
         keyspace.add_field("flush", length=1, start_at=10, tags="transmission")
         keyspace.add_field("neuron_id", length=10, start_at=0)
+        '''
+
+        # If there isn't already a frontend
+        # **TODO** this probably doesn't belong here
+        if self.frontend is None:
+            logger.info("Creating frontend")
+
+            # Create frontend
+            self.frontend = SpinnakerMainInterface(
+                extra_load_algorithms=[self._allocate_algorithm,
+                                       self._load_algorithm])
+
+            # Pass hostname to frontend
+            self.frontend.set_up_machine_specifics(self.spinnaker_hostname)
 
         # Allocate clusters
         # **NOTE** neuron clusters and hence vertices need to be allocated
@@ -240,19 +276,19 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         for pop_id, pop in enumerate(self.populations):
             logger.debug("\tPopulation:%s", pop.label)
             pop._create_neural_cluster(pop_id, hardware_timestep_us,
-                                       duration_timesteps, self, keyspace)
+                                       duration_timesteps, self.frontend, keyspace)
 
         logger.info("Allocating synapse clusters")
         for pop in self.populations:
             logger.debug("\tPopulation:%s", pop.label)
             pop._create_synapse_clusters(hardware_timestep_us,
-                                         duration_timesteps, self)
+                                         duration_timesteps, self.frontend)
 
         logger.info("Allocating current input clusters")
         for proj in self.projections:
             # Create cluster
             c = proj._create_current_input_cluster(
-                hardware_timestep_us, duration_timesteps, self)
+                hardware_timestep_us, duration_timesteps, self.frontend)
 
             # Add cluster to data structures
             if c is not None:
@@ -261,46 +297,14 @@ class State(common.control.BaseState, SpinnakerMainInterface):
         # Constrain all vertices in clusters to same chip
         constraints = self._constrain_clusters()
 
-        logger.info("Assigning keyspaces")
-
-        # Finalise keyspace fields
-        keyspace.assign_fields()
-
         # Build nets
         logger.info("Building nets")
 
         # Loop through all populations and build nets
         for pop in self.populations:
-            pop._build_nets(self)
+            pop._build_nets(self.frontend)
 
-        # Allocate buffers for SDRAM-based communication between vertices
-        logger.info("Allocating population output buffers")
-        for pop in self.populations:
-            pop._allocate_out_buffers(placements, allocations,
-                                      self.machine_controller)
-        logger.info("Allocating projection output buffers")
-        for proj in self.projections:
-            proj._allocate_out_buffers(placements, allocations,
-                                       self.machine_controller)
-
-        # Load vertices
-        # **NOTE** projection vertices need to be loaded
-        # first as weight-fixed point is only calculated at
-        # load time and this is required by neuron vertices
-        logger.info("Loading projection vertices")
-        for proj in self.projections:
-            proj._load_verts(placements, allocations, self.machine_controller)
-
-        logger.info("Loading population vertices")
-        flush_mask = keyspace.get_mask(field="flush")
-        for pop in self.populations:
-            pop._load_verts(placements, allocations,
-                            self.machine_controller, flush_mask)
-
-        # Load routing tables and applications
-        logger.info("Loading routing tables")
-        self.machine_controller.load_routing_tables(routing_tables)
-
+        '''
         # If an on-chip generation phase is required
         if len(vertex_load_applications) > 0:
             # Build map of vertex load applications to load
@@ -316,29 +320,10 @@ class State(common.control.BaseState, SpinnakerMainInterface):
                                     AppState.init, AppState.exit,
                                     len(vertex_load_applications),
                                     60.0)
-
-        logger.info("Loading applications")
-        self.machine_controller.load_application(run_app_map)
-
-        # Wait for all cores to hit SYNC0
-        logger.info("Waiting for synch")
-        num_verts = len(vertex_resources)
-        self._wait_for_transition(placements, allocations,
-                                  AppState.init, AppState.sync0,
-                                  num_verts)
-
-        # Sync!
-        self.machine_controller.send_signal("sync0")
-
-        # Wait for simulation to complete
-        logger.info("Simulating")
-        time.sleep(float(duration_ms) / 1000.0)
-
-        # Wait for all cores to exit
-        logger.info("Waiting for exit")
-        self._wait_for_transition(placements, allocations,
-                                  AppState.run, AppState.exit,
-                                  num_verts)
+        '''
+        # Run
+        # **NOTE** allocation and loading will be performed using algorithms
+        self.frontend.run()
 
         self._read_stats(duration_ms)
 state = State()

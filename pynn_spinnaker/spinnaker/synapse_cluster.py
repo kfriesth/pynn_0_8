@@ -307,7 +307,7 @@ class SynapseCluster(object):
                                          app_id=app_id)
                 for _ in range(2)]
 
-    def load(self, placements, allocations, machine_controller,
+    def load(self, placements, transceiver, app_id,
              incoming_projections, flush_mask):
 
         # Loop through all the postsynaptic slices in this synapse cluster
@@ -393,16 +393,14 @@ class SynapseCluster(object):
             # Loop through synapse verts in this postsynaptic slice
             for v in post_slice_verts:
                 # Get placement and allocation
-                vertex_placement = placements[v]
-                vertex_allocation = allocations[v]
+                placement = placements[v]
 
                 # Get core this vertex should be run on
                 core = vertex_allocation[machine.Cores]
                 assert (core.stop - core.start) == 1
 
                 logger.debug("\t\t\t\tVertex %s (%u, %u, %u)",
-                            v, vertex_placement[0], vertex_placement[1],
-                            core.start)
+                            v, placement.x, placement.y, placement.p)
 
                 # Partition matrices that have been generated on host
                 host_sub_matrix_props, host_sub_matrix_rows =\
@@ -426,32 +424,29 @@ class SynapseCluster(object):
                     self.regions[Regions.key_lookup].place_matrices(
                         sub_matrix_props)
 
-                # Select placed chip
-                with machine_controller(x=vertex_placement[0],
-                                        y=vertex_placement[1]):
-                    # Get the back propagation buffers from
-                    # each back-propagating neuron vertex
-                    back_prop_in_buffers = [
-                        b.get_back_prop_in_buffer(v.post_neuron_slice)
-                        for b in v.back_prop_in_verts]
+                # Get the back propagation buffers from
+                # each back-propagating neuron vertex
+                back_prop_in_buffers = [
+                    b.get_back_prop_in_buffer(v.post_neuron_slice)
+                    for b in v.back_prop_in_verts]
 
-                    # Get region arguments required to
-                    # calculate size and write
-                    region_arguments = self._get_region_arguments(
-                        v.post_neuron_slice, sub_matrix_props,
-                        host_sub_matrix_rows, chip_sub_matrix_projs,
-                        matrix_placements, weight_fixed_point, v.out_buffers,
-                        back_prop_in_buffers, flush_mask)
+                # Get region arguments required to
+                # calculate size and write
+                region_arguments = self._get_region_arguments(
+                    v.post_neuron_slice, sub_matrix_props,
+                    host_sub_matrix_rows, chip_sub_matrix_projs,
+                    matrix_placements, weight_fixed_point, v.out_buffers,
+                    back_prop_in_buffers, flush_mask)
 
-                    # Load regions
-                    v.region_memory = load_regions(
-                        self.regions, region_arguments,
-                        machine_controller, core)
+                # Load regions
+                v.region_memory = load_regions(
+                    self.regions, region_arguments,
+                    placement, transceiver, app_id)
 
-                    # Store sub matrix properties and placements in vertex
-                    # so they can be used to subsequently read weights back
-                    v.sub_matrix_props = sub_matrix_props
-                    v.matrix_placements = matrix_placements
+                # Store sub matrix properties and placements in vertex
+                # so they can be used to subsequently read weights back
+                v.sub_matrix_props = sub_matrix_props
+                v.matrix_placements = matrix_placements
 
     def read_profile(self):
         # Get the profile recording region
