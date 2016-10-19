@@ -7,6 +7,7 @@ import time
 
 # Import classes
 from collections import defaultdict
+from pacman.executor.algorithm_decorators.algorithm_decorator import algorithm
 from pacman.model.constraints.placer_constraints\
     .placer_same_chip_as_constraint import PlacerSameChipAsConstraint
 from pyNN import common
@@ -109,7 +110,8 @@ class State(common.control.BaseState):
     @algorithm(input_definitions={
         "placements": "MemoryPlacements",
         "transceiver": "MemoryTransceiver",
-        "app_id": "APPID"})
+        "app_id": "APPID"},
+        outputs=[])
     def _allocate_algorithm(self, placements, transceiver, app_id):
         # Allocate buffers for SDRAM-based communication between vertices
         logger.info("Allocating population output buffers")
@@ -122,7 +124,8 @@ class State(common.control.BaseState):
     @algorithm(input_definitions={
         "placements": "MemoryPlacements",
         "transceiver": "MemoryTransceiver",
-        "app_id": "APPID"})
+        "app_id": "APPID"},
+        outputs=["LoadedApplicationDataToken"])
     def _load_algorithm(self, placements, transceiver, app_id):
         # Load vertices
         # **NOTE** projection vertices need to be loaded
