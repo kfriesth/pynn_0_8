@@ -145,8 +145,8 @@ class SynapticMatrix(Region):
     def estimate_matrix_bytes(self, pre_slice, max_row_synapses):
         return self._get_num_row_words(max_row_synapses) * len(pre_slice) * 4
 
-    def partition_matrices(self, post_vertex_slice, pre_pop_sub_rows,
-                           incoming_connections):
+    def partition_matrices(self, routing_info, post_vertex_slice,
+                           pre_pop_sub_rows, incoming_connections):
         # Loop through all incoming connections
         sub_matrix_props = []
         sub_matrix_rows = []
@@ -227,14 +227,14 @@ class SynapticMatrix(Region):
 
                     # Add sub matrix to list
                     sub_matrix_props.append(
-                        SubMatrix(pre_n_vert.routing_key,
-                                  pre_n_vert.routing_mask,
+                        SubMatrix(pre_n_vert.get_routing_key(routing_info),
+                                  pre_n_vert.get_routing_mask(routing_info),
                                   size_words, max_cols))
                     sub_matrix_rows.append(vert_sub_rows)
 
         return sub_matrix_props, sub_matrix_rows
 
-    def partition_on_chip_matrix(self, post_vertex_slice,
+    def partition_on_chip_matrix(self, routing_info, post_vertex_slice,
                                  pre_pop_on_chip_projection,
                                  incoming_connections):
         # Loop through all incoming connections
@@ -271,8 +271,8 @@ class SynapticMatrix(Region):
 
                     # Add sub matrix to list
                     sub_matrix_props.append(
-                        SubMatrix(pre_n_vert.routing_key,
-                                  pre_n_vert.routing_mask,
+                        SubMatrix(pre_n_vert.get_routing_key(routing_info),
+                                  pre_n_vert.get_routing_mask(routing_info),
                                   size_words, max_cols))
                     sub_matrix_projs.append((proj, num_rows))
 

@@ -134,7 +134,8 @@ class State(common.control.BaseState):
 
         logger.info("Loading population vertices")
         for pop in self.populations:
-            pop._load_verts(placements, transceiver, app_id)
+            pop._load_verts(self.frontend.routing_infos, placements,
+                            transceiver, app_id)
 
     # ----------------------------------------------------------------------------
     # PyNN SpiNNaker internal methods

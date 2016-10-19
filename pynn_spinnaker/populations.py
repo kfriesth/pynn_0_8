@@ -501,9 +501,10 @@ class Population(common.Population):
                 traffic_weight = mean_firing_rate * len(n_vert.neuron_slice)
 
                 # Add an edge to the front end representing this connection
+                # **THINK** could we use a second 'partition_id' for flushing
                 front_end.add_machine_edge(
                     MachineEdge(n_vert, s_vert,
-                                traffic_weight=traffic_weight))
+                                traffic_weight=traffic_weight), 0)
 
     def _convergent_connect(self, presynaptic_indices, postsynaptic_index,
                             matrix_rows, weight_range,
@@ -553,7 +554,7 @@ class Population(common.Population):
             self._neural_cluster.allocate_out_buffers(placements, transceiver,
                                                       app_id)
 
-    def _load_verts(self, placements, transceiver, app_id, flush_mask):
+    def _load_verts(self, routing_info, placements, transceiver, app_id):
         logger.info("\tPopulation label:%s", self.label)
 
         # Loop through synapse types and associated cluster
@@ -562,14 +563,14 @@ class Population(common.Population):
                         s_type.model.__class__.__name__, s_type.receptor)
 
             # Load vertices that make up cluster
-            s_cluster.load(placements, transceiver, app_id,
-                           self.incoming_projections[s_type],
-                           flush_mask)
+            s_cluster.load(routing_info, placements, transceiver, app_id,
+                           self.incoming_projections[s_type])
 
         # If population has a neuron cluster, load it
         if self._neural_cluster is not None:
             logger.info("\t\tNeurons")
-            self._neural_cluster.load(placements, transceiver, app_id)
+            self._neural_cluster.load(routing_info, placements, transceiver,
+                                      app_id)
 
     # --------------------------------------------------------------------------
     # Internal SpiNNaker properties

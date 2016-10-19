@@ -307,8 +307,11 @@ class SynapseCluster(object):
                                          app_id=app_id)
                 for _ in range(2)]
 
-    def load(self, placements, transceiver, app_id,
-             incoming_projections, flush_mask):
+    def load(self, routing_info, placements, transceiver, app_id,
+             incoming_projections):
+        # **YUCK** keyspace is fixed so 10 bits are always used
+        # for neuron ID and flush mask is located above that
+        flush_mask = (1 << 10)
 
         # Loop through all the postsynaptic slices in this synapse cluster
         for post_slice in self.post_slices:
@@ -405,12 +408,14 @@ class SynapseCluster(object):
                 # Partition matrices that have been generated on host
                 host_sub_matrix_props, host_sub_matrix_rows =\
                     self.regions[Regions.synaptic_matrix].partition_matrices(
-                        post_slice, pre_pop_sub_rows, v.incoming_connections)
+                        routing_info, post_slice, pre_pop_sub_rows,
+                        v.incoming_connections)
 
                 # Partition matrices that should be generated on chip
                 chip_sub_matrix_props, chip_sub_matrix_projs =\
                     self.regions[Regions.synaptic_matrix].partition_on_chip_matrix(
-                        post_slice, pre_pop_on_chip_proj, v.incoming_connections)
+                        routing_info, post_slice, pre_pop_on_chip_proj,
+                        v.incoming_connections)
 
                 # Build combined list of matrix properties
                 sub_matrix_props = host_sub_matrix_props + chip_sub_matrix_props

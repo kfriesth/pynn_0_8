@@ -41,7 +41,8 @@ InputBuffer = namedtuple("InputBuffer",
 # ----------------------------------------------------------------------------
 # InputVertex
 # ----------------------------------------------------------------------------
-class InputVertex(MachineVertex, AbstractHasAssociatedBinary):
+class InputVertex(MachineVertex, AbstractHasAssociatedBinary,
+                  AbstractProvidesNKeysForPartition):
     def __init__(self, cluster, post_neuron_slice, receptor_index,
                  sdram, app_name):
         self.post_neuron_slice = post_neuron_slice

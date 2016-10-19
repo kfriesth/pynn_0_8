@@ -11,6 +11,8 @@ from pacman.model.graphs.machine.impl.machine_vertex \
     import MachineVertex
 from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
     import AbstractHasAssociatedBinary
+from spinn_front_end_common.abstract_models.abstract_provides_n_keys_for_partition \
+    import AbstractProvidesNKeysForPartition
 from utils import Args
 
 # Import functions
@@ -46,19 +48,10 @@ class Regions(enum.IntEnum):
 # ----------------------------------------------------------------------------
 # Vertex
 # ----------------------------------------------------------------------------
-class Vertex(MachineVertex, AbstractHasAssociatedBinary):
-    def __init__(self, parent_keyspace, neuron_slice, pop_index, vert_index,
-                 sdram, app_name):
+class Vertex(MachineVertex, AbstractHasAssociatedBinary,
+             AbstractProvidesNKeysForPartition):
+    def __init__(self, neuron_slice, pop_index, sdram, app_name):
         self.neuron_slice = neuron_slice
-
-        # Build child keyspaces for spike and
-        # flush packets coming from this vertex
-        self.spike_keyspace = parent_keyspace(pop_index=pop_index,
-                                              vert_index=vert_index,
-                                              flush=0)
-        self.flush_keyspace = parent_keyspace(pop_index=pop_index,
-                                              vert_index=vert_index,
-                                              flush=1)
 
         self.input_verts = []
         self.back_prop_out_buffers = None
@@ -71,6 +64,15 @@ class Vertex(MachineVertex, AbstractHasAssociatedBinary):
         MachineVertex.__init__(
             self, label="<neuron slice:%s>" % (str(self.neuron_slice)
             resources_required=ResourceContainer(sdram=SDRAMResource(sdram)))
+
+    # ------------------------------------------------------------------------
+    # AbstractProvidesNKeysForPartition methods
+    # ------------------------------------------------------------------------
+    def get_n_keys_for_partition(self, partition, graph_mapper):
+        # Each neuron requires two keys
+        # **HACK** allocate fixed keyspace for each neuron cluster:
+        # means a fixed bit can always be used to signify flushing
+        return 2 * 1024
 
     # ------------------------------------------------------------------------
     # Public methods
@@ -105,36 +107,21 @@ class Vertex(MachineVertex, AbstractHasAssociatedBinary):
             [b + (buffer_start_word * 4) for b in self.back_prop_out_buffers],
             buffer_num_words, buffer_start_bit, buffer_end_bit)
 
-    # ------------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------------
-    @property
-    def spike_tx_key(self):
-        return self.spike_keyspace.get_value(tag="transmission")
+    def get_spike_tx_key(self, routing_info):
+        # Routing key is used for spike transmission
+        return self.get_routing_key(routing_info)
 
-    @property
-    def flush_tx_key(self):
-        return self.flush_keyspace.get_value(tag="transmission")
+    def get_flush_tx_key(self):
+        # **YUCK** flush events are transmitted with fixed bit set
+        return self.get_routing_key(routing_info) | (1 << 1024)
 
-    @property
-    def routing_key(self):
-        # Check that routing key for the spike and flush keyspace are the same
-        spike_key = self.spike_keyspace.get_value(tag="routing")
-        flush_key = self.flush_keyspace.get_value(tag="routing")
-        assert spike_key == flush_key
+    def get_routing_key(self, routing_info):
+        vert_routing = routing_info.get_routing_info_from_pre_vertex(self, 0)
+        return vert_routing.first_key
 
-        # Return the spike key (arbitarily)
-        return spike_key
-
-    @property
-    def routing_mask(self):
-        # Check that routing mask for the spike and flush keyspace are the same
-        spike_mask = self.spike_keyspace.get_mask(tag="routing")
-        flush_mask = self.flush_keyspace.get_mask(tag="routing")
-        assert spike_mask == flush_mask
-
-        # Return the spike mask (arbitarily)
-        return spike_mask
+    def get_routing_mask(self, routing_info)):
+        vert_routing = routing_info.get_routing_info_from_pre_vertex(self, 0)
+        return vert_routing.first_mask
 
 
 # -----------------------------------------------------------------------------
@@ -254,15 +241,19 @@ class NeuralCluster(object):
                                              app_id=app_id)
                     for _ in range(2)]
 
-    def load(self, placements, transceiver, app_id):
+    def load(self, routing_info, placements, transceiver, app_id):
         # Loop through vertices
         for v in self.verts:
             # Get placement and allocation
             placement = placements[v]
 
+            # Use routing info to get spike and flush TX keys
+            spike_tx_key = v.get_spike_tx_key(routing_info)
+            flush_tx_key = v.get_flush_tx_key(routing_info)
+
             logger.debug("\t\t\tVertex %s (%u, %u, %u): Spike key:%08x, Flush key:%08x",
                             v, placement.x, placement.y, placement.p,
-                            v.spike_tx_key, v.flush_tx_key)
+                            spike_tx_key, flush_tx_key)
 
             # Get the input buffers from each synapse vertex
             in_buffers = [
@@ -271,7 +262,7 @@ class NeuralCluster(object):
 
             # Get regiona arguments
             region_arguments = self._get_region_arguments(
-                v.spike_tx_key, v.flush_tx_key, v.neuron_slice,
+                spike_tx_key, flush_tx_key, v.neuron_slice,
                 in_buffers, v.back_prop_out_buffers)
 
             # Load regions
