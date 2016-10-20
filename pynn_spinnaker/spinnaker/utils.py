@@ -18,6 +18,8 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
     import AbstractHasAssociatedBinary
 from spinn_front_end_common.abstract_models.abstract_provides_n_keys_for_partition \
     import AbstractProvidesNKeysForPartition
+from spinn_front_end_common.abstract_models.abstract_starts_synchronized \
+    import AbstractStartsSynchronized
 from spinnman.utilities.io.memory_io import MemoryIO
 
 # Import functions
@@ -45,7 +47,8 @@ InputBuffer = namedtuple("InputBuffer",
 # ----------------------------------------------------------------------------
 # InputVertex
 # ----------------------------------------------------------------------------
-class InputVertex(MachineVertex, AbstractHasAssociatedBinary):
+class InputVertex(MachineVertex, AbstractHasAssociatedBinary,
+                  AbstractStartsSynchronized):
     def __init__(self, post_neuron_slice, receptor_index, sdram, app_name):
         self.post_neuron_slice = post_neuron_slice
         self.weight_fixed_point = None
@@ -328,6 +331,9 @@ def load_regions(regions, region_arguments,
 
         # Perform the write
         region.write_subregion_to_file(mem, *args, **kwargs)
+
+        # **HACK** force a flush of memory region
+        mem.flush()
 
     # Close memory IO?
     memory_io.close()

@@ -15,6 +15,8 @@ from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
     import AbstractHasAssociatedBinary
 from spinn_front_end_common.abstract_models.abstract_provides_n_keys_for_partition \
     import AbstractProvidesNKeysForPartition
+from spinn_front_end_common.abstract_models.abstract_starts_synchronized \
+    import AbstractStartsSynchronized
 from utils import Args
 
 # Import functions
@@ -51,7 +53,7 @@ class Regions(enum.IntEnum):
 # Vertex
 # ----------------------------------------------------------------------------
 class Vertex(MachineVertex, AbstractHasAssociatedBinary,
-             AbstractProvidesNKeysForPartition):
+             AbstractProvidesNKeysForPartition, AbstractStartsSynchronized):
     def __init__(self, neuron_slice, sdram, app_name):
         self.neuron_slice = neuron_slice
 
