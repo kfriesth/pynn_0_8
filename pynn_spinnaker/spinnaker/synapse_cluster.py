@@ -291,8 +291,7 @@ class SynapseCluster(object):
         # Loop through synapse verts
         for v in self.verts:
             # Get placement
-            # **TODO** how to lookup
-            placement = placements[v]
+            placement = placements.get_placement_of_vertex(v)
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
                          v, placement.x, placement.y, placement.p)
@@ -396,11 +395,7 @@ class SynapseCluster(object):
             # Loop through synapse verts in this postsynaptic slice
             for v in post_slice_verts:
                 # Get placement and allocation
-                placement = placements[v]
-
-                # Get core this vertex should be run on
-                core = vertex_allocation[machine.Cores]
-                assert (core.stop - core.start) == 1
+                placement = placements.get_placement_of_vertex(v)
 
                 logger.debug("\t\t\t\tVertex %s (%u, %u, %u)",
                             v, placement.x, placement.y, placement.p)
@@ -534,7 +529,7 @@ class SynapseCluster(object):
             out_buffers
 
         region_arguments[Regions.delay_buffer].kwargs["sub_matrix_props"] =\
-            sub_matrix_propsmachine_controlle
+            sub_matrix_props
 
         region_arguments[Regions.plasticity].kwargs["fixed_point"] =\
             weight_fixed_point

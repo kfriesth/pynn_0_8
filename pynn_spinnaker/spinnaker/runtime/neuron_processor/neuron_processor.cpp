@@ -315,21 +315,31 @@ void UpdateNeurons()
     bool flush = g_Flush.ShouldFlush(n, spiked);
     if(spiked || flush)
     {
-      if(spiked)
+      // If spike key and flush key are the same and both equal UINT32_MAX,
+      // spikes from this neuron processor don't go anywhere thus haven't
+      // been allocated a key so don't send a packet
+      if(g_AppWords[AppWordSpikeKey] == UINT32_MAX &&
+        g_AppWords[AppWordSpikeKey] == g_AppWords[AppWordFlushKey])
       {
-        LOG_PRINT(LOG_LEVEL_TRACE, "\t\tEmitting spike");
+        LOG_PRINT(LOG_LEVEL_TRACE, "\t\tNo routing for neuron - not sending packet");
       }
       else
       {
-        LOG_PRINT(LOG_LEVEL_TRACE, "\t\tEmitting flush");
-      }
+        if(spiked)
+        {
+          LOG_PRINT(LOG_LEVEL_TRACE, "\t\tEmitting spike");
+        }
+        else
+        {
+          LOG_PRINT(LOG_LEVEL_TRACE, "\t\tEmitting flush");
+        }
+        // Send spike/flush
+        uint32_t key = g_AppWords[spiked ? AppWordSpikeKey : AppWordFlushKey] | n;
 
-      // Send spike/flush
-      uint32_t key = g_AppWords[spiked ? AppWordSpikeKey : AppWordFlushKey] | n;
-
-      while(!spin1_send_mc_packet(key, 0, NO_PAYLOAD))
-      {
-        spin1_delay_us(1);
+        while(!spin1_send_mc_packet(key, 0, NO_PAYLOAD))
+        {
+          spin1_delay_us(1);
+        }
       }
     }
 

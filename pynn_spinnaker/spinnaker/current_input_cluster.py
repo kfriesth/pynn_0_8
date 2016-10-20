@@ -86,8 +86,7 @@ class CurrentInputCluster(object):
         # Loop through synapse verts
         for v in self.verts:
             # Get placement
-            # **TODO** how to lookup
-            placement = placements[v]
+            placement = placements.get_placement_of_vertex(v)
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
                          v, placement.x, placement.y, placement.p)
@@ -109,7 +108,7 @@ class CurrentInputCluster(object):
             v.weight_fixed_point = 15
 
             # Get placement and allocation
-            placement = placements[v]
+            placement = placements.get_placement_of_vertex(v)
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
                          v, placement.x, placement.y, placement.p)

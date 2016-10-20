@@ -40,10 +40,10 @@ name = "SpiNNaker"
 def _allocate_algorithm(placements, transceiver, app_id):
     # Allocate buffers for SDRAM-based communication between vertices
     logger.info("Allocating population output buffers")
-    for pop in self.populations:
+    for pop in state.populations:
         pop._allocate_out_buffers(placements, transceiver, app_id)
     logger.info("Allocating projection output buffers")
-    for proj in self.projections:
+    for proj in state.projections:
         proj._allocate_out_buffers(placements, transceiver, app_id)
 
 @algorithm(input_definitions={
@@ -57,13 +57,14 @@ def _load_algorithm(placements, transceiver, app_id):
     # first as weight-fixed point is only calculated at
     # load time and this is required by neuron vertices
     logger.info("Loading projection vertices")
-    for proj in self.projections:
+    for proj in state.projections:
         proj._load_verts(placements, transceiver, app_id)
 
     logger.info("Loading population vertices")
-    for pop in self.populations:
-        pop._load_verts(self.frontend.routing_infos, placements,
+    for pop in state.populations:
+        pop._load_verts(state.frontend.routing_infos, placements,
                         transceiver, app_id)
+    return True
 
 # ----------------------------------------------------------------------------
 # ID
@@ -194,7 +195,9 @@ class State(common.control.BaseState):
                                  "verts to same chip", len(n.input_verts))
 
                     # Build same chip constraint and add to neuron vertex
-                    n.add_constraint(PlacerSameChipAsConstraint(n.input_verts))
+                    # **YUCK** should be able to use a list of vertices here
+                    for i in n.input_verts:
+                        n.add_constraint(PlacerSameChipAsConstraint(i))
 
             # Loop through synapse clusters
             for s_type, s_cluster in iteritems(pop._synapse_clusters):

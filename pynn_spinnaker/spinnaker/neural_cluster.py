@@ -119,13 +119,13 @@ class Vertex(MachineVertex, AbstractHasAssociatedBinary,
         # Routing key is used for spike transmission
         return self.get_routing_key(routing_info)
 
-    def get_flush_tx_key(self):
+    def get_flush_tx_key(self, routing_info):
         # **YUCK** flush events are transmitted with fixed bit set
-        return self.get_routing_key(routing_info) | (1 << 1024)
+        return self.get_routing_key(routing_info) | (1 << 10)
 
     def get_routing_key(self, routing_info):
         vert_routing = routing_info.get_routing_info_from_pre_vertex(self, 0)
-        return vert_routing.first_key
+        return 0xFFFFFFFF if vert_routing is None else vert_routing.first_key
 
     def get_routing_mask(self, routing_info):
         vert_routing = routing_info.get_routing_info_from_pre_vertex(self, 0)
@@ -230,8 +230,7 @@ class NeuralCluster(object):
         # Loop through vertices
         for v in self.verts:
             # Get placement
-            # **TODO** how to lookup
-            placement = placements[v]
+            placement = placements.get_placement_of_vertex(v)
 
             logger.debug("\t\tVertex %s (%u, %u, %u)",
                          v, placement.x, placement.y, placement.p)
@@ -252,7 +251,7 @@ class NeuralCluster(object):
         # Loop through vertices
         for v in self.verts:
             # Get placement and allocation
-            placement = placements[v]
+            placement = placements.get_placement_of_vertex(v)
 
             # Use routing info to get spike and flush TX keys
             spike_tx_key = v.get_spike_tx_key(routing_info)
