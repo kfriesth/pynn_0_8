@@ -93,7 +93,8 @@ def read_config(filenames=SEARCH_PATH):
                   "writeprovenancedata": False,
                   "extract_iobuf": False,
                   "writetextspecs": False,
-                  "writeMemoryMapReport": False})
+                  "writeMemoryMapReport": False,
+                  "writeReloadSteps": False})
     _add_section(parser, "SpecExecution",
                  {"specExecOnHost": True })
     _add_section(parser, "Database",
