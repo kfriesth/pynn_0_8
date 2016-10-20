@@ -103,7 +103,7 @@ class AnalogueRecording(Region):
         data = region_memory.read(sample_words * 4 * self.record_ticks)
 
         # Load into numpy
-        data = np.fromstring(data, dtype=np.int32)
+        data = np.frombuffer(data, dtype=np.int32)
 
         # Finally reshape into a sample shaped vector
         data = data.reshape((-1, sample_words))

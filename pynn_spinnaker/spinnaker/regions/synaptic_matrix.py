@@ -278,14 +278,14 @@ class SynapticMatrix(Region):
 
         return sub_matrix_props, sub_matrix_projs
 
-    def read_sub_matrix(self, pre_n_vert, post_s_vert, names,
-                        region_mem, sim_timestep_ms):
+    def read_sub_matrix(self, pre_n_vert, post_s_vert, names, region_mem,
+                        sim_timestep_ms, routing_info):
         # Find the matrix properties and placement of sub-matrix
         # associated with pre-synaptic neuron vertex
         vert_matrix_prop, vert_matrix_placement = next((
             (s, p) for s, p in zip(post_s_vert.sub_matrix_props,
                                    post_s_vert.matrix_placements)
-            if s.key == pre_n_vert.routing_key),
+            if s.key == pre_n_vert.get_routing_key(routing_info)),
             (None, None))
         assert vert_matrix_prop is not None
         assert vert_matrix_placement is not None
@@ -308,7 +308,7 @@ class SynapticMatrix(Region):
         data = region_mem.read(vert_matrix_prop.size_words * 4)
 
         # Load into numpy
-        data = np.fromstring(data, dtype=np.uint32)
+        data = np.frombuffer(data, dtype=np.uint32)
 
         # On this basis, create two views
         matrix_words = data[:num_matrix_words]

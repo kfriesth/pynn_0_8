@@ -92,7 +92,7 @@ class SpikeRecording(Region):
         data = region_memory.read(sample_bytes * self.simulation_ticks)
 
         # Load into numpy
-        data = np.fromstring(data, dtype=np.uint8)
+        data = np.frombuffer(data, dtype=np.uint8)
 
         # Swap endianness
         data = data.view(dtype=np.uint32).byteswap().view(dtype=np.uint8)

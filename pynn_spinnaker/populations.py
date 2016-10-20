@@ -212,7 +212,8 @@ class Population(common.Population):
         # Return synaptic weights from correct synapse cluster
         synapse_cluster = self._synapse_clusters[synapse_type]
         return synapse_cluster.read_synaptic_matrices(
-            pre_pop, names, float(self._simulator.state.dt))
+            pre_pop, names, float(self._simulator.state.dt),
+            self._simulator.state.frontend.routing_infos)
 
     def _read_recorded_vars(self, vars_to_read):
         spike_times = {}
