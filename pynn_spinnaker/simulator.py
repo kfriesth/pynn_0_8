@@ -261,15 +261,6 @@ class State(common.control.BaseState):
         # Estimate constraints
         self._estimate_constraints(hardware_timestep_us)
 
-        '''
-        # Create a 32-bit keyspace
-        keyspace = BitField(32)
-        keyspace.add_field("pop_index", tags=("routing", "transmission"))
-        keyspace.add_field("vert_index", tags=("routing", "transmission"))
-        keyspace.add_field("flush", length=1, start_at=10, tags="transmission")
-        keyspace.add_field("neuron_id", length=10, start_at=0)
-        '''
-
         # If there isn't already a frontend
         # **TODO** this probably doesn't belong here
         if self.frontend is None:
