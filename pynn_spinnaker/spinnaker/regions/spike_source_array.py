@@ -54,7 +54,7 @@ class SpikeSourceArray(Region):
 
         # Total size is a single word to specify time of first spike
         # block and maximum number of spike blocks required
-        return 4 + (max_spike_blocks * spike_block_bytes)
+        return 4 + int(max_spike_blocks * spike_block_bytes)
 
     def write_subregion_to_file(self, fp, vertex_slice):
         """Write a portion of the region to a file applying the formatter.
