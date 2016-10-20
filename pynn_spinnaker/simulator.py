@@ -1,8 +1,10 @@
 # Import modules
+import config
 import itertools
 import logging
 import math
 import numpy as np
+from os import path
 import time
 
 # Import classes
@@ -13,14 +15,55 @@ from pacman.model.constraints.placer_constraints\
 from pyNN import common
 from spinn_front_end_common.interface.spinnaker_main_interface import \
     SpinnakerMainInterface
+from spinn_front_end_common.utilities.utility_objs.executable_finder \
+    import ExecutableFinder
+
 
 # Import functions
 from six import iteritems, itervalues
+
+# Import globals
+from pynn_spinnaker.standardmodels import __file__ as standard_models
 
 logger = logging.getLogger("pynn_spinnaker")
 
 name = "SpiNNaker"
 
+ # ----------------------------------------------------------------------------
+# PACMAN algorithms
+# ----------------------------------------------------------------------------
+@algorithm(input_definitions={
+    "placements": "MemoryPlacements",
+    "transceiver": "MemoryTransceiver",
+    "app_id": "APPID"},
+    outputs=[])
+def _allocate_algorithm(placements, transceiver, app_id):
+    # Allocate buffers for SDRAM-based communication between vertices
+    logger.info("Allocating population output buffers")
+    for pop in self.populations:
+        pop._allocate_out_buffers(placements, transceiver, app_id)
+    logger.info("Allocating projection output buffers")
+    for proj in self.projections:
+        proj._allocate_out_buffers(placements, transceiver, app_id)
+
+@algorithm(input_definitions={
+    "placements": "MemoryPlacements",
+    "transceiver": "MemoryTransceiver",
+    "app_id": "APPID"},
+    outputs=["LoadedApplicationDataToken"])
+def _load_algorithm(placements, transceiver, app_id):
+    # Load vertices
+    # **NOTE** projection vertices need to be loaded
+    # first as weight-fixed point is only calculated at
+    # load time and this is required by neuron vertices
+    logger.info("Loading projection vertices")
+    for proj in self.projections:
+        proj._load_verts(placements, transceiver, app_id)
+
+    logger.info("Loading population vertices")
+    for pop in self.populations:
+        pop._load_verts(self.frontend.routing_infos, placements,
+                        transceiver, app_id)
 
 # ----------------------------------------------------------------------------
 # ID
@@ -103,42 +146,6 @@ class State(common.control.BaseState):
             logger.info("Stopping SpiNNaker application")
             self.frontend.stop()
             self.frontend = None
-
-    # ----------------------------------------------------------------------------
-    # PACMAN algorithms
-    # ----------------------------------------------------------------------------
-    @algorithm(input_definitions={
-        "placements": "MemoryPlacements",
-        "transceiver": "MemoryTransceiver",
-        "app_id": "APPID"},
-        outputs=[])
-    def _allocate_algorithm(self, placements, transceiver, app_id):
-        # Allocate buffers for SDRAM-based communication between vertices
-        logger.info("Allocating population output buffers")
-        for pop in self.populations:
-            pop._allocate_out_buffers(placements, transceiver, app_id)
-        logger.info("Allocating projection output buffers")
-        for proj in self.projections:
-            proj._allocate_out_buffers(placements, transceiver, app_id)
-
-    @algorithm(input_definitions={
-        "placements": "MemoryPlacements",
-        "transceiver": "MemoryTransceiver",
-        "app_id": "APPID"},
-        outputs=["LoadedApplicationDataToken"])
-    def _load_algorithm(self, placements, transceiver, app_id):
-        # Load vertices
-        # **NOTE** projection vertices need to be loaded
-        # first as weight-fixed point is only calculated at
-        # load time and this is required by neuron vertices
-        logger.info("Loading projection vertices")
-        for proj in self.projections:
-            proj._load_verts(placements, transceiver, app_id)
-
-        logger.info("Loading population vertices")
-        for pop in self.populations:
-            pop._load_verts(self.frontend.routing_infos, placements,
-                            transceiver, app_id)
 
     # ----------------------------------------------------------------------------
     # PyNN SpiNNaker internal methods
@@ -265,13 +272,29 @@ class State(common.control.BaseState):
         if self.frontend is None:
             logger.info("Creating frontend")
 
+            # Rad config file
+            config_parser = config.read_config()
+
+            # Create executable finder and add standard models path
+            # **TODO** move executable finder somewhere globally instantiated
+            executable_finder = ExecutableFinder()
+            executable_finder.add_path(path.join(path.dirname(standard_models),
+                                                 "binaries"))
+
             # Create frontend
             self.frontend = SpinnakerMainInterface(
-                extra_load_algorithms=[self._allocate_algorithm,
-                                       self._load_algorithm])
+                config_parser, executable_finder,
+                extra_algorithm_xml_paths=(),
+                extra_load_algorithms=["_allocate_algorithm",
+                                       "_load_algorithm"])
 
             # Pass hostname to frontend
             self.frontend.set_up_machine_specifics(self.spinnaker_hostname)
+
+            # **YUCK** I can't find any way to set this,
+            # presumably from its name, internal property
+            self.frontend._machine_time_step = hardware_timestep_us
+            self.frontend._time_scale_factor = 1.0 / self.realtime_proportion
 
         # Allocate clusters
         # **NOTE** neuron clusters and hence vertices need to be allocated
@@ -279,8 +302,8 @@ class State(common.control.BaseState):
         logger.info("Allocating neuron clusters")
         for pop_id, pop in enumerate(self.populations):
             logger.debug("\tPopulation:%s", pop.label)
-            pop._create_neural_cluster(pop_id, hardware_timestep_us,
-                                       duration_timesteps, self.frontend, keyspace)
+            pop._create_neural_cluster(hardware_timestep_us,
+                                       duration_timesteps, self.frontend)
 
         logger.info("Allocating synapse clusters")
         for pop in self.populations:
@@ -327,7 +350,7 @@ class State(common.control.BaseState):
         '''
         # Run
         # **NOTE** allocation and loading will be performed using algorithms
-        self.frontend.run()
+        self.frontend.run(duration_ms)
 
         self._read_stats(duration_ms)
 state = State()

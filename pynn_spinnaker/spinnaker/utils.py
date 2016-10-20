@@ -12,8 +12,12 @@ from os import path
 from collections import namedtuple, Iterable
 from pacman.model.graphs.machine.impl.machine_vertex \
     import MachineVertex
+from pacman.model.resources.resource_container import ResourceContainer
+from pacman.model.resources.sdram_resource import SDRAMResource
 from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
     import AbstractHasAssociatedBinary
+from spinn_front_end_common.abstract_models.abstract_provides_n_keys_for_partition \
+    import AbstractProvidesNKeysForPartition
 from spinnman.utilities.io.memory_io import MemoryIO
 
 # Import functions
@@ -41,10 +45,8 @@ InputBuffer = namedtuple("InputBuffer",
 # ----------------------------------------------------------------------------
 # InputVertex
 # ----------------------------------------------------------------------------
-class InputVertex(MachineVertex, AbstractHasAssociatedBinary,
-                  AbstractProvidesNKeysForPartition):
-    def __init__(self, cluster, post_neuron_slice, receptor_index,
-                 sdram, app_name):
+class InputVertex(MachineVertex, AbstractHasAssociatedBinary):
+    def __init__(self, post_neuron_slice, receptor_index, sdram, app_name):
         self.post_neuron_slice = post_neuron_slice
         self.weight_fixed_point = None
         self.receptor_index = receptor_index
@@ -55,11 +57,17 @@ class InputVertex(MachineVertex, AbstractHasAssociatedBinary,
         # Superclass
         # **NOTE** as vertex partitioning is already done,
         # only SDRAM is required for subsequent placing decisions
-        label = "<post neuron slice:%s, receptor index:%u>" %
-            (str(self.post_neuron_slice), self.receptor_index)
+        label = ("<post neuron slice:%s, receptor index:%u>" %
+                 (str(self.post_neuron_slice), self.receptor_index))
         MachineVertex.__init__(
             self, label=label,
             resources_required=ResourceContainer(sdram=SDRAMResource(sdram)))
+
+    # ------------------------------------------------------------------------
+    # AbstractHasAssociatedBinary methods
+    # ------------------------------------------------------------------------
+    def get_binary_file_name(self):
+        return self.app_name
 
     # ------------------------------------------------------------------------
     # Public methods
@@ -192,7 +200,6 @@ class LazyArrayFloatToFixConverter(object):
         vals.dtype = self.dtype
         return vals
 
-
 # ----------------------------------------------------------------------------
 # Functions
 # ----------------------------------------------------------------------------
@@ -234,9 +241,6 @@ def is_scalar(value):
     return isinstance(value, (int, long, np.integer, float, bool))
 
 def get_model_executable_filename(prefix, model, profiled):
-    # Find directory in which model class is located
-    model_directory = path.dirname(inspect.getfile(model.__class__))
-
     # Start filename with prefix
     filename = prefix
 
@@ -250,7 +254,7 @@ def get_model_executable_filename(prefix, model, profiled):
         filename += "_profiled"
 
     # Join filename to path and add extension
-    return path.join(model_directory, "binaries", filename + ".aplx")
+    return filename + ".aplx"
 
 def get_homogeneous_param(param_space, param_name):
     # Extract named parameter lazy array from parameter

@@ -9,6 +9,8 @@ from rig import machine
 from collections import defaultdict
 from pacman.model.graphs.machine.impl.machine_vertex \
     import MachineVertex
+from pacman.model.resources.resource_container import ResourceContainer
+from pacman.model.resources.sdram_resource import SDRAMResource
 from spinn_front_end_common.abstract_models.abstract_has_associated_binary \
     import AbstractHasAssociatedBinary
 from spinn_front_end_common.abstract_models.abstract_provides_n_keys_for_partition \
@@ -50,7 +52,7 @@ class Regions(enum.IntEnum):
 # ----------------------------------------------------------------------------
 class Vertex(MachineVertex, AbstractHasAssociatedBinary,
              AbstractProvidesNKeysForPartition):
-    def __init__(self, neuron_slice, pop_index, sdram, app_name):
+    def __init__(self, neuron_slice, sdram, app_name):
         self.neuron_slice = neuron_slice
 
         self.input_verts = []
@@ -62,7 +64,7 @@ class Vertex(MachineVertex, AbstractHasAssociatedBinary,
         # **NOTE** as vertex partitioning is already done,
         # only SDRAM is required for subsequent placing decisions
         MachineVertex.__init__(
-            self, label="<neuron slice:%s>" % (str(self.neuron_slice)
+            self, label="<neuron slice:%s>" % str(self.neuron_slice),
             resources_required=ResourceContainer(sdram=SDRAMResource(sdram)))
 
     # ------------------------------------------------------------------------
@@ -73,6 +75,12 @@ class Vertex(MachineVertex, AbstractHasAssociatedBinary,
         # **HACK** allocate fixed keyspace for each neuron cluster:
         # means a fixed bit can always be used to signify flushing
         return 2 * 1024
+
+    # ------------------------------------------------------------------------
+    # AbstractHasAssociatedBinary methods
+    # ------------------------------------------------------------------------
+    def get_binary_file_name(self):
+        return self.app_name
 
     # ------------------------------------------------------------------------
     # Public methods
@@ -119,7 +127,7 @@ class Vertex(MachineVertex, AbstractHasAssociatedBinary,
         vert_routing = routing_info.get_routing_info_from_pre_vertex(self, 0)
         return vert_routing.first_key
 
-    def get_routing_mask(self, routing_info)):
+    def get_routing_mask(self, routing_info):
         vert_routing = routing_info.get_routing_info_from_pre_vertex(self, 0)
         return vert_routing.first_mask
 
@@ -135,11 +143,10 @@ class NeuralCluster(object):
         2:  "Apply buffer",
     }
 
-    def __init__(self, pop_id, cell_type, parameters, initial_values,
+    def __init__(self, cell_type, parameters, initial_values,
                  sim_timestep_ms, timer_period_us, sim_ticks,
                  record_sample_interval, indices_to_record, config,
-                 frontend, keyspace, post_synaptic_width,
-                 requires_back_prop, pop_size):
+                 frontend, post_synaptic_width, requires_back_prop, pop_size):
         # Create standard regions
         self.regions = {}
         self.regions[Regions.system] = regions.System(
@@ -209,8 +216,8 @@ class NeuralCluster(object):
         self.verts = []
         for vert_id, neuron_slice in enumerate(neuron_slices):
             # Create vertex
-            vert = Vertex(keyspace, neuron_slice, pop_id, vert_id,
-                          self._estimate_sdram(v.neuron_slice), neuron_app)
+            vert = Vertex(neuron_slice, self._estimate_sdram(neuron_slice),
+                          neuron_app)
 
             # Add to frontend and verts list
             frontend.add_machine_vertex(vert)

@@ -9,6 +9,7 @@ from pyNN import common
 # Import classes
 from collections import defaultdict, Iterable, namedtuple
 from operator import itemgetter
+from pacman.model.graphs.machine.impl.machine_edge import MachineEdge
 from pyNN.standardmodels import StandardCellType
 from pyNN.parameters import ParameterSpace
 from . import simulator
@@ -419,9 +420,8 @@ class Population(common.Population):
             # Also store constraint in projection
             proj.current_input_j_constraint = constraint
 
-    def _create_neural_cluster(self, pop_id, timer_period_us, simulation_ticks,
-                               vertex_load_applications, vertex_run_applications,
-                               vertex_resources, keyspace):
+    def _create_neural_cluster(self, timer_period_us, simulation_ticks,
+                               frontend):
         # Create neural cluster
         if not self._entirely_directly_connectable:
             # Determine if any of the incoming projections
@@ -431,19 +431,17 @@ class Population(common.Population):
                 for s_type in iterkeys(self.incoming_projections))
 
             self._neural_cluster = NeuralCluster(
-                pop_id, self.celltype, self._parameters, self.initial_values,
+                self.celltype, self._parameters, self.initial_values,
                 self._simulator.state.dt, timer_period_us,
                 simulation_ticks, self.recorder.sampling_interval,
                 self.recorder.indices_to_record, self.spinnaker_config,
-                vertex_load_applications, vertex_run_applications,
-                vertex_resources, keyspace, self.neuron_j_constraint,
-                requires_back_prop, self.size)
+                frontend, self.neuron_j_constraint, requires_back_prop,
+                self.size)
         else:
             self._neural_cluster = None
 
     def _create_synapse_clusters(self, timer_period_us, simulation_ticks,
-                                 vertex_load_applications, vertex_run_applications,
-                                 vertex_resources):
+                                 frontend):
         # Loop through newly partioned incoming projections
         self._synapse_clusters = {}
         for s_type, pre_pop_projs in iteritems(self.incoming_projections):
@@ -463,8 +461,7 @@ class Population(common.Population):
                                    self._simulator.state.max_delay,
                                    self.spinnaker_config, self.size,
                                    s_type.model, receptor_index,
-                                   synaptic_projs, vertex_load_applications,
-                                   vertex_run_applications, vertex_resources,
+                                   synaptic_projs, frontend,
                                    self.synapse_j_constraints[s_type])
 
                 # Add cluster to dictionary
@@ -502,7 +499,7 @@ class Population(common.Population):
 
                 # Add an edge to the front end representing this connection
                 # **THINK** could we use a second 'partition_id' for flushing
-                front_end.add_machine_edge(
+                frontend.add_machine_edge(
                     MachineEdge(n_vert, s_vert,
                                 traffic_weight=traffic_weight), 0)
 

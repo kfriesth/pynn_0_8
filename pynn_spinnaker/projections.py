@@ -171,8 +171,7 @@ class Projection(common.Projection, ContextMixin):
             self._connector.connect(self)
 
     def _create_current_input_cluster(self, timer_period_us, simulation_ticks,
-                                      vertex_load_applications, vertex_run_applications,
-                                      vertex_resources):
+                                      frontend):
         # If this projection is directory connectable
         if self._directly_connectable:
             logger.debug("\t\tProjection:%s", self.label)
@@ -186,8 +185,8 @@ class Projection(common.Projection, ContextMixin):
                 self.pre.celltype, self.pre._parameters, self.pre.initial_values,
                 self._simulator.state.dt, timer_period_us, simulation_ticks,
                 self.pre.recorder.indices_to_record, self.pre.spinnaker_config,
-                receptor_index, vertex_load_applications, vertex_run_applications,
-                vertex_resources, self.current_input_j_constraint, self.pre.size)
+                receptor_index, frontend, self.current_input_j_constraint,
+                self.pre.size)
         # Otherwise, null current input cluster
         else:
             self._current_input_cluster = None
