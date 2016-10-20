@@ -43,7 +43,7 @@ class DelayBuffer(Region):
 
         # One word for number of delay slots and buffer size,
         # followed by delay matrix
-        return 8 + (4 * (self.max_delay_ticks * buffer_size))
+        return 8 + (4 * int(self.max_delay_ticks * buffer_size))
 
     def write_subregion_to_file(self, fp, sub_matrix_props):
         """Write a portion of the region to a file applying the formatter.
