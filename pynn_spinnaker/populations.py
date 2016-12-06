@@ -570,6 +570,16 @@ class Population(common.Population):
             self._neural_cluster.load(routing_info, placements, transceiver,
                                       app_id)
 
+    def _add_loader_executable_targets(self, placements,
+                                       loader_executable_targets):
+        # Loop through synapse types and associated clusters and allow
+        # them to add any executable targets required for loading their data
+        for s_type, s_cluster in iteritems(self._synapse_clusters):
+            s_cluster.add_loader_executable_targets(placements,
+                                                    loader_executable_targets)
+
+        # **TODO** allow neuron clusters to do the same
+
     # --------------------------------------------------------------------------
     # Internal SpiNNaker properties
     # --------------------------------------------------------------------------

@@ -176,7 +176,7 @@ class SynapseCluster(object):
         self.synapse_model = synapse_model
 
         # Loop through the post-slices
-        generate_matrix_on_chip = False
+        self.generate_matrix_on_chip = False
         self.verts = []
         for post_slice in self.post_slices:
             logger.debug("\t\t\tPost slice:%s", str(post_slice))
@@ -191,7 +191,7 @@ class SynapseCluster(object):
 
                 # If this projection can be generated on chip, set flag
                 if proj._can_generate_on_chip:
-                    generate_matrix_on_chip = True
+                    self.generate_matrix_on_chip = True
 
                 # Loop through the vertices which the pre-synaptic
                 # population has been partitioned into
@@ -273,17 +273,6 @@ class SynapseCluster(object):
 
         logger.debug("\t\t\t%u synapse vertices", len(self.verts))
 
-        # If any matrices should be generated on chip, show message
-        '''
-        if generate_matrix_on_chip:
-            # Find path to connection builder aplx
-            connection_builder_app = resource_filename(
-                "pynn_spinnaker",
-                "standardmodels/binaries/connection_builder.aplx")
-            logger.debug("\t\t\tConnection builder application:%s",
-                         connection_builder_app)
-        '''
-        
     # --------------------------------------------------------------------------
     # Public methods
     # --------------------------------------------------------------------------
@@ -447,6 +436,21 @@ class SynapseCluster(object):
                 # so they can be used to subsequently read weights back
                 v.sub_matrix_props = sub_matrix_props
                 v.matrix_placements = matrix_placements
+
+    def add_loader_executable_targets(self, placements,
+                                      loader_executable_targets):
+        # If this synapse cluster has any matrices
+        # which should be generated on chip
+        if self.generate_matrix_on_chip:
+            # Loop through synapse verts
+            for v in self.verts:
+                # Get placement
+                placement = placements.get_placement_of_vertex(v)
+
+                # Add processor to executable targets
+                loader_executable_targets.add_processor(
+                    "connection_builder.aplx",
+                    placement.x, placement.y, placement.p)
 
     def read_profile(self):
         # Get the profile recording region

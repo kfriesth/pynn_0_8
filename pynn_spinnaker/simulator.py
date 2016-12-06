@@ -4,7 +4,7 @@ import itertools
 import logging
 import math
 import numpy as np
-from os import path
+from os import path, stat
 import time
 
 # Import classes
@@ -17,10 +17,16 @@ from spinn_front_end_common.interface.spinnaker_main_interface import \
     SpinnakerMainInterface
 from spinn_front_end_common.utilities.utility_objs.executable_finder \
     import ExecutableFinder
-
+from spinn_front_end_common.utilities.utility_objs.executable_targets \
+    import ExecutableTargets
+from spinnman.model.cpu_state import CPUState
+from spinn_storage_handlers.file_data_reader import FileDataReader
+from spinn_machine.utilities.progress_bar import ProgressBar
 
 # Import functions
 from six import iteritems, itervalues
+from spinn_front_end_common.utilities.helpful_functions import \
+    wait_for_cores_to_be_ready
 
 # Import globals
 from pynn_spinnaker.standardmodels import __file__ as standard_models
@@ -51,7 +57,7 @@ def _allocate_algorithm(placements, transceiver, app_id):
     "transceiver": "MemoryTransceiver",
     "app_id": "APPID"},
     outputs=["LoadedApplicationDataToken"])
-def _load_algorithm(placements, transceiver, app_id):
+def _load_data_algorithm(placements, transceiver, app_id):
     # Load vertices
     # **NOTE** projection vertices need to be loaded
     # first as weight-fixed point is only calculated at
@@ -65,6 +71,63 @@ def _load_algorithm(placements, transceiver, app_id):
         pop._load_verts(state.frontend.routing_infos, placements,
                         transceiver, app_id)
     return True
+
+@algorithm(input_definitions={
+    "placements": "MemoryPlacements",
+    "transceiver": "MemoryTransceiver",
+    "executable_finder": "ExecutableFinder",
+    "app_id": "APPID",
+    "loaded_application_data_token": "LoadedApplicationDataToken"},
+    outputs=[])
+def _build_data_on_chip_algorithm(placements, transceiver, executable_finder,
+                                  app_id, loaded_application_data_token):
+    # Check host-generated application data has been loaded
+    if not loaded_application_data_token:
+            raise exceptions.ConfigurationException(
+                "The token for having loaded the application data token is set"
+                " to false and therefore I cannot run. Please fix and try "
+                "again")
+
+    # Create executable targets
+    executable_targets = ExecutableTargets()
+
+    # Loop through each population and add any executable
+    # targets required to build application data
+    for pop in state.populations:
+        pop._add_loader_executable_targets(placements,
+                                           executable_targets)
+
+    if len(executable_targets.binaries) > 0:
+        # Loop through loader binaries in targets
+        progress_bar = ProgressBar(executable_targets.total_processors,
+                                "Loading loader executables onto the machine")
+        for binary_name in executable_targets.binaries:
+            # Attempt to find this within search paths
+            binary_path = executable_finder.get_executable_path(binary_name)
+            if binary_path is None:
+                raise exceptions.ExecutableNotFoundException(binary_name)
+
+            # Get file reader to read binary and subset of cores to load it to;
+            # and flood fill
+            file_reader = FileDataReader(binary_path)
+            core_subset = executable_targets.get_cores_for_binary(binary_name)
+
+            transceiver.execute_flood(core_subset, file_reader, app_id,
+                                      stat(binary_path).st_size)
+
+            # Count the number of cores loaded and
+            # update the progress bar accordingly
+            actual_cores_loaded = sum(len(list(chip.processor_ids))
+                                      for chip in core_subset.core_subsets)
+            progress_bar.update(amount_to_add=actual_cores_loaded)
+        progress_bar.end()
+
+        # Wait for loader executables to finish
+        progress_bar = ProgressBar(executable_targets.total_processors,
+                                "Building data on-chip")
+        wait_for_cores_to_be_ready(executable_targets, app_id,
+                                   transceiver, CPUState.FINISHED)
+        progress_bar.end()
 
 # ----------------------------------------------------------------------------
 # ID
@@ -280,7 +343,8 @@ class State(common.control.BaseState):
                 config_parser, executable_finder,
                 extra_algorithm_xml_paths=(),
                 extra_load_algorithms=["_allocate_algorithm",
-                                       "_load_algorithm"])
+                                       "_load_data_algorithm",
+                                       "_build_data_on_chip_algorithm"])
 
             # Pass hostname to frontend
             self.frontend.set_up_machine_specifics(self.spinnaker_hostname)
@@ -325,23 +389,6 @@ class State(common.control.BaseState):
         for pop in self.populations:
             pop._build_nets(self.frontend)
 
-        '''
-        # If an on-chip generation phase is required
-        if len(vertex_load_applications) > 0:
-            # Build map of vertex load applications to load
-            load_app_map = build_application_map(vertex_load_applications,
-                                                 placements, allocations,
-                                                 Cores)
-            logger.info("Loading loader applications")
-            self.machine_controller.load_application(load_app_map)
-
-            # Wait for all cores to exit
-            logger.info("Waiting for loader exit")
-            self._wait_for_transition(placements, allocations,
-                                    AppState.init, AppState.exit,
-                                    len(vertex_load_applications),
-                                    60.0)
-        '''
         # Run
         # **NOTE** allocation and loading will be performed using algorithms
         self.frontend.run(duration_ms)

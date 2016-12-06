@@ -60,9 +60,8 @@ def setup(timestep=DEFAULT_TIMESTEP, min_delay=DEFAULT_MIN_DELAY,
         extra_params.get("realtime_proportion", 1.0)
     simulator.state.convert_direct_connections =\
         extra_params.get("convert_direct_connections", True)
-    #simulator.state.generate_connections_on_chip =\
-    #    extra_params.get("generate_connections_on_chip", True)
-    simulator.state.generate_connections_on_chip = False
+    simulator.state.generate_connections_on_chip =\
+        extra_params.get("generate_connections_on_chip", True)
     simulator.state.stop_on_spinnaker =\
         extra_params.get("stop_on_spinnaker", True)
     simulator.state.disable_software_watchdog =\
