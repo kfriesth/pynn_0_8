@@ -1,7 +1,9 @@
 #pragma once
 
-// Model includes
-#include "../../../common/random/mars_kiss64.h"
+// Rig CPP common includes
+#include "rig_cpp_common/random/mars_kiss64.h"
+
+// Common includes
 #include "../../../common/poisson_source.h"
 
 namespace SpikeSource

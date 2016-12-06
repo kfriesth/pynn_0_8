@@ -95,5 +95,105 @@ private:
   int32_t m_Low;
   int32_t m_Range;
 };
+
+//-----------------------------------------------------------------------------
+// Normal
+//-----------------------------------------------------------------------------
+class Normal : public Base
+{
+public:
+  ADD_FACTORY_CREATOR(Normal);
+
+  //-----------------------------------------------------------------------------
+  // Base virtuals
+  //-----------------------------------------------------------------------------
+  virtual void Generate(unsigned int number, unsigned int fixedPoint,
+                        MarsKiss64 &rng, int32_t (&output)[1024]) const;
+
+private:
+  Normal(uint32_t *&region);
+
+  //-----------------------------------------------------------------------------
+  // Members
+  //-----------------------------------------------------------------------------
+  int32_t m_Mu;
+  int32_t m_Sigma;
+};
+
+//-----------------------------------------------------------------------------
+// Normal clipped
+//-----------------------------------------------------------------------------
+class NormalClipped : public Base
+{
+public:
+  ADD_FACTORY_CREATOR(NormalClipped);
+
+  //-----------------------------------------------------------------------------
+  // Base virtuals
+  //-----------------------------------------------------------------------------
+  virtual void Generate(unsigned int number, unsigned int fixedPoint,
+                        MarsKiss64 &rng, int32_t (&output)[1024]) const;
+
+private:
+  NormalClipped(uint32_t *&region);
+
+  //-----------------------------------------------------------------------------
+  // Members
+  //-----------------------------------------------------------------------------
+  int32_t m_Mu;
+  int32_t m_Sigma;
+  int32_t m_Low;
+  int32_t m_High;
+};
+
+//-----------------------------------------------------------------------------
+// Normal clipped to boundary
+//-----------------------------------------------------------------------------
+class NormalClippedToBoundary : public Base
+{
+public:
+  ADD_FACTORY_CREATOR(NormalClippedToBoundary);
+
+  //-----------------------------------------------------------------------------
+  // Base virtuals
+  //-----------------------------------------------------------------------------
+  virtual void Generate(unsigned int number, unsigned int fixedPoint,
+                        MarsKiss64 &rng, int32_t (&output)[1024]) const;
+
+private:
+  NormalClippedToBoundary(uint32_t *&region);
+
+  //-----------------------------------------------------------------------------
+  // Members
+  //-----------------------------------------------------------------------------
+  int32_t m_Mu;
+  int32_t m_Sigma;
+  int32_t m_Low;
+  int32_t m_High;
+};
+
+//-----------------------------------------------------------------------------
+// Exponential
+//-----------------------------------------------------------------------------
+class Exponential : public Base
+{
+public:
+  ADD_FACTORY_CREATOR(Exponential);
+
+  //-----------------------------------------------------------------------------
+  // Base virtuals
+  //-----------------------------------------------------------------------------
+  virtual void Generate(unsigned int number, unsigned int fixedPoint,
+                        MarsKiss64 &rng, int32_t (&output)[1024]) const;
+
+private:
+  Exponential(uint32_t *&region);
+
+  //-----------------------------------------------------------------------------
+  // Members
+  //-----------------------------------------------------------------------------
+  int32_t m_Beta;
+};
+ 
 } // ParamGenerator
 } // ConnectionBuilder

@@ -9,6 +9,7 @@ from ..spinnaker import regions
 from copy import deepcopy
 from functools import partial
 from pyNN.standardmodels import build_translations
+from ..spinnaker.utils import calc_timestep_mul
 
 logger = logging.getLogger("PyNN")
 
@@ -22,6 +23,21 @@ def _poisson_slow_model(values, sim_timestep_ms, **kwargs):
     # Based on this return mask specifying which spikes sources
     # should be simulated using the slow rather than fast model
     return la.larray(spikes_per_timestep <= 0.25)
+
+def calc_max_neurons_per_core(hardware_timestep_us,
+                              num_input_processors,
+                              neuron_update_cpu_cycles,
+                              synapse_shape_cpu_cycles,
+                              apply_input_cpu_cycles=10):
+    # Calculate the number of timesteps we have available
+    total_cycles = int(200000 * calc_timestep_mul(hardware_timestep_us))
+
+    # Calculate the number of cycles per neuron
+    cycles_per_neuron = (neuron_update_cpu_cycles + synapse_shape_cpu_cycles
+                         + (num_input_processors * apply_input_cpu_cycles))
+
+    # Divide the total by this
+    return min(1024, total_cycles // cycles_per_neuron)
 
 # ----------------------------------------------------------------------------
 # Neuron type translations
@@ -131,13 +147,12 @@ class IF_curr_exp(cells.IF_curr_exp):
     translations = deepcopy(if_curr_neuron_translations)
     translations.update(exp_synapse_translations)
 
+    # SpiNNaker additionally supports recording synaptic input currents
+    recordable = cells.IF_curr_exp.recordable + ["isyn_exc", "isyn_inh"]
+
     # --------------------------------------------------------------------------
     # Internal SpiNNaker properties
     # --------------------------------------------------------------------------
-    # How many of these neurons per core can
-    # a SpiNNaker neuron processor handle
-    _max_neurons_per_core = 1024
-
     # JK: not necessary
     _neuron_region_class = regions.Neuron
     
@@ -149,6 +164,14 @@ class IF_curr_exp(cells.IF_curr_exp):
     _synapse_immutable_param_map = exp_synapse_immutable_param_map
     _synapse_mutable_param_map = exp_synapse_curr_mutable_param_map
 
+    # --------------------------------------------------------------------------
+    # Internal SpiNNaker methods
+    # --------------------------------------------------------------------------
+    # How many of these neurons per core can
+    # a SpiNNaker neuron processor handle
+    _calc_max_neurons_per_core = partial(calc_max_neurons_per_core,
+                                         neuron_update_cpu_cycles=143,
+                                         synapse_shape_cpu_cycles=28)
 
 class IF_cond_exp(cells.IF_cond_exp):
     __doc__ = cells.IF_cond_exp.__doc__
@@ -159,10 +182,6 @@ class IF_cond_exp(cells.IF_cond_exp):
     # --------------------------------------------------------------------------
     # Internal SpiNNaker properties
     # --------------------------------------------------------------------------
-    # How many of these neurons per core can
-    # a SpiNNaker neuron processor handle
-    _max_neurons_per_core = 1024
-
     _neuron_region_class = regions.Neuron
 
     _directly_connectable = False
@@ -172,6 +191,15 @@ class IF_cond_exp(cells.IF_cond_exp):
 
     _synapse_immutable_param_map = exp_synapse_immutable_param_map
     _synapse_mutable_param_map = exp_synapse_cond_mutable_param_map
+
+    # --------------------------------------------------------------------------
+    # Internal SpiNNaker methods
+    # --------------------------------------------------------------------------
+    # How many of these neurons per core can
+    # a SpiNNaker neuron processor handle
+    _calc_max_neurons_per_core = partial(calc_max_neurons_per_core,
+                                         neuron_update_cpu_cycles=167,
+                                         synapse_shape_cpu_cycles=28)
 
 '''
 class Izhikevich(cells.Izhikevich):
@@ -194,11 +222,6 @@ class SpikeSourcePoisson(cells.SpikeSourcePoisson):
     # --------------------------------------------------------------------------
     # Internal SpiNNaker properties
     # --------------------------------------------------------------------------
-    # How many of these neurons per core can
-    # a SpiNNaker neuron processor handle
-    _max_neurons_per_core = 256
-    _max_current_inputs_per_core = 2048
-
     _directly_connectable = True
     _neuron_region_class = regions.SpikeSourcePoisson
     _current_input_region_class = regions.SpikeSourcePoisson
@@ -213,6 +236,22 @@ class SpikeSourcePoisson(cells.SpikeSourcePoisson):
                                b_function=lazy_param_map.u032_rate_exp_minus_lambda)),
     ]
 
+    # --------------------------------------------------------------------------
+    # Internal SpiNNaker methods
+    # --------------------------------------------------------------------------
+    # How many of these neurons per core can
+    # a SpiNNaker neuron processor handle
+    _calc_max_neurons_per_core = partial(calc_max_neurons_per_core,
+                                         neuron_update_cpu_cycles=58,
+                                         synapse_shape_cpu_cycles=0,
+                                         apply_input_cpu_cycles=0)
+
+    def _calc_max_current_inputs_per_core(self, hardware_timestep_us):
+        # Calculate timestep multiplier
+        timestep_mul = calc_timestep_mul(hardware_timestep_us)
+
+        # Scale by timestep mul
+        return int(2048 * timestep_mul)
 
 class SpikeSourceArray(cells.SpikeSourceArray):
     __doc__ = cells.SpikeSourceArray.__doc__
@@ -226,9 +265,30 @@ class SpikeSourceArray(cells.SpikeSourceArray):
     # --------------------------------------------------------------------------
     # How many of these neurons per core can
     # a SpiNNaker neuron processor handle
-    _max_neurons_per_core = 256
     _max_current_inputs_per_core = 2048
 
     _directly_connectable = True
     _neuron_region_class = regions.SpikeSourceArray
     _current_input_region_class = regions.SpikeSourceArray
+
+    # --------------------------------------------------------------------------
+    # Internal SpiNNaker methods
+    # --------------------------------------------------------------------------
+    # How many of these neurons per core can
+    # a SpiNNaker neuron processor handle
+    def _calc_max_neurons_per_core(self, hardware_timestep_us,
+                                   num_input_processors):
+        assert num_input_processors == 0
+
+        # Calculate timestep multiplier
+        timestep_mul = calc_timestep_mul(hardware_timestep_us)
+
+        # Scale by timestep mul
+        return int(1024 * timestep_mul)
+
+    def _calc_max_current_inputs_per_core(self, hardware_timestep_us):
+        # Calculate timestep multiplier
+        timestep_mul = calc_timestep_mul(hardware_timestep_us)
+
+        # Scale by timestep mul
+        return int(2048 * timestep_mul)

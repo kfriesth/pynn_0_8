@@ -45,10 +45,9 @@ class AllToAllConnector(AllToAllConnector):
                                    pre_size, post_size):
         return len(post_slice)
 
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                               pre_size, post_size):
-        return len(pre_slice) * len(post_slice)
-
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
+        return len(post_slice)
 
 # ----------------------------------------------------------------------------
 # FixedProbabilityConnector
@@ -66,21 +65,14 @@ class FixedProbabilityConnector(FixedProbabilityConnector):
     # --------------------------------------------------------------------------
     def _estimate_max_row_synapses(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Create array of possible row lengths
-        x = np.arange(len(post_slice))
+        # Each connection is made with probability p_connect
+        # Return the row-length that 99.99% of rows will be shorter than
+        return int(scipy.stats.binom.ppf(
+            0.9999, len(post_slice), self.p_connect))
 
-        # Calculate CDF of binomial distribution representing len(post_slice)
-        # number of events with p_connect probability
-        cdf = scipy.stats.binom.cdf(x, len(post_slice), self.p_connect)
-
-        # Return row-length corresponding to 99.99% of rows
-        return np.searchsorted(cdf, 0.9999)
-
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                               pre_size, post_size):
-        return int(round(self.p_connect * float(len(pre_slice)) *
-                         float(len(post_slice))))
-
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
+        return int(round(self.p_connect * float(len(post_slice))))
 
 # ----------------------------------------------------------------------------
 # OneToOneConnector
@@ -97,10 +89,9 @@ class OneToOneConnector(OneToOneConnector):
                                    pre_size, post_size):
         return 1 if pre_slice.overlaps(post_slice) else 0
 
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                               pre_size, post_size):
-        return min(len(pre_slice), len(post_slice))
-
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
+        return 1 if pre_slice.overlaps(post_slice) else 0
 
 # ----------------------------------------------------------------------------
 # FromListConnector
@@ -113,8 +104,7 @@ class FromListConnector(FromListConnector):
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
-                                   pre_size, post_size):
+    def _get_slice_row_length_histogram(self, pre_slice, post_slice):
         # Extract columns of pre and post indices from connection list
         pre_indices = self.conn_list[:, 0]
         post_indices = self.conn_list[:, 1]
@@ -125,25 +115,24 @@ class FromListConnector(FromListConnector):
                 (post_indices >= post_slice.start) &
                 (post_indices < post_slice.stop))
 
-        # Use mask to select slice pre-indices
-        slice_pre_indices = pre_indices[mask].astype(int)
+        # Return histogram of masked pre-indices
+        return np.bincount(pre_indices[mask].astype(int))
 
-        # Return maximum number of list entries in each bin
-        return np.amax(np.bincount(slice_pre_indices));
+    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+                                   pre_size, post_size):
+        # Get the row length histogram of slice
+        hist = self._get_slice_row_length_histogram(pre_slice, post_slice)
 
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                              pre_size, post_size):
-        # Extract columns of pre and post indices from connection list
-        pre_indices = self.conn_list[:, 0]
-        post_indices = self.conn_list[:, 1]
+        # Return maximum row length
+        return np.amax(hist);
 
-        # Return number of list entries which contain
-        # connections in both pre and post slices
-        # http://stackoverflow.com/questions/9560207/how-to-count-values-in-a-certain-range-in-a-numpy-array
-        return ((pre_indices >= pre_slice.start) &
-                (pre_indices < pre_slice.stop) &
-                (post_indices >= post_slice.start) &
-                (post_indices < post_slice.stop)).sum()
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
+        # Get the row length histogram of slice
+        hist = self._get_slice_row_length_histogram(pre_slice, post_slice)
+
+        # Return average row length
+        return np.average(hist)
 
 # ----------------------------------------------------------------------------
 # FixedNumberPostConnector
@@ -158,26 +147,23 @@ class FixedNumberPostConnector(FixedNumberPostConnector):
     # --------------------------------------------------------------------------
     def _estimate_max_row_synapses(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Create array of possible row lengths - there can't be more than n!
-        x = np.arange(self.n)
+        # Each pre-synaptic neuron connects to n of the M=post_size
+        # post-synaptic neurons.
+        # Determining which of those n connections are within this post_slice is
+        # a matter of sampling N=len(post_slice) times without replacement.
+        # The number within the row and post_slice are
+        # hypergeometrically distributed.
 
-        # Calculate the probability that any of the
-        # n synapses in the row is within post-slice
-        prob_in_row = float(len(post_slice)) / float(post_size)
+        # Return the row-length that 99.99% of rows will be shorter than
+        return int(scipy.stats.hypergeom.ppf(
+            0.9999, M=post_size, n=self.n, N=len(post_slice)))
 
-        # Calculate CDF of binomial distribution representing n
-        # events with prob_in_slice probability of being in post_slice
-        cdf = scipy.stats.binom.cdf(x, self.n, prob_in_row)
-
-        # Return row-length corresponding to 99.99% of rows
-        return min(len(post_slice), np.searchsorted(cdf, 0.9999))
-
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                               pre_size, post_size):
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
         # How large a fraction of the full post populations is this
         post_fraction = float(len(post_slice)) / float(post_size)
 
-        return int(len(pre_slice) * self.n * post_fraction)
+        return int(self.n * post_fraction)
 
 # ----------------------------------------------------------------------------
 # FixedNumberPreConnector
@@ -192,26 +178,17 @@ class FixedNumberPreConnector(FixedNumberPreConnector):
     # --------------------------------------------------------------------------
     def _estimate_max_row_synapses(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Create array of possible row lengths
-        x = np.arange(len(post_slice))
-
         # Calculate the probability that any of the
         # n synapses in the column will be within this row
         prob_in_row = float(self.n) / pre_size
 
-        # Calculate CDF of binomial distribution representing len(post_slice)
-        # events with prob_in_row probability of being connected to post neuron
-        cdf = scipy.stats.binom.cdf(x, len(post_slice), prob_in_row)
+        # Return the row-length that 99.99% of rows will be shorter than
+        return int(scipy.stats.binom.ppf(
+            0.9999, len(post_slice), prob_in_row))
 
-        # Return row-length corresponding to 99.99% of rows
-        return np.searchsorted(cdf, 0.9999)
-
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                               pre_size, post_size):
-        # How large a fraction of the full pre populations is this
-        pre_fraction = float(len(pre_slice)) / float(pre_size)
-
-        return int(len(post_slice) * self.n * pre_fraction)
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
+        return int(len(post_slice) * float(self.n) / float(pre_size))
 
 # ----------------------------------------------------------------------------
 # FixedTotalNumberConnector
@@ -226,26 +203,23 @@ class FixedTotalNumberConnector(FixedTotalNumberConnector):
     # --------------------------------------------------------------------------
     def _estimate_max_row_synapses(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Create array of possible row lengths - there can't be more than n!
-        x = np.arange(self.n)
+        # There are n connections amongst the M=pre_size*post_size possible
+        # connections.
+        # Determining which of those n connections are within this row and
+        # post_slice is a matter of sampling N=len(post_slice) times without
+        # replacement. The number within the row and post_slice are
+        # hypergeometrically distributed.
 
-        # Calculate the probability that any of the n synapses
-        # in the full matrix are within post-slice of a single row
-        prob_in_row = (1.0 / float(pre_size)) *\
-            (float(len(post_slice)) / float(post_size))
+        M = pre_size * post_size
+        N = len(post_slice)
 
-        # Calculate CDF of binomial distribution representing n events with
-        # prob_in_row probability of being in slice
-        cdf = scipy.stats.binom.cdf(x, self.n, prob_in_row)
+        return int(scipy.stats.hypergeom.ppf(0.9999, M=M, N=N, n=self.n))
 
-        # Return row-length corresponding to 99.9% of rows
-        return min(len(post_slice), np.searchsorted(cdf, 0.999))
-
-    def _estimate_num_synapses(self, pre_slice, post_slice,
-                               pre_size, post_size):
-        # How large a fraction of the full pre and post populations is this
+    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
+                                    pre_size, post_size):
+        # How large a fraction of the full post populations is this
         pre_fraction = float(len(pre_slice)) / float(pre_size)
         post_fraction = float(len(post_slice)) / float(post_size)
 
         # Multiply these by the total number of synapses
-        return int(pre_fraction * post_fraction * float(self.n))
+        return int(pre_fraction * post_fraction * float(self.n) / float(pre_size))

@@ -2,6 +2,7 @@
 import enum
 import itertools
 import logging
+import numpy as np
 import regions
 from rig import machine
 
@@ -47,6 +48,7 @@ class Regions(enum.IntEnum):
     analogue_recording_start = analogue_recording_0
     analogue_recording_end = analogue_recording_3 + 1
     profiler = analogue_recording_end
+    statistics = analogue_recording_end + 1
 
 
 # ----------------------------------------------------------------------------
@@ -145,7 +147,13 @@ class NeuralCluster(object):
         2:  "Apply buffer",
     }
 
-    def __init__(self, cell_type, parameters, initial_values,
+    # Names of statistics
+    statistic_names = (
+        "task_queue_full",
+        "timer_event_overflows",
+    )
+
+    def __init__(self, pop_id, cell_type, parameters, initial_values,
                  sim_timestep_ms, timer_period_us, sim_ticks,
                  record_sample_interval, indices_to_record, config,
                  frontend, post_synaptic_width, requires_back_prop, pop_size):
@@ -159,9 +167,9 @@ class NeuralCluster(object):
             requires_back_prop)
         self.regions[Regions.flush] = regions.Flush(config.flush_time,
                                                     sim_timestep_ms)
-
         self.regions[Regions.spike_recording] = regions.SpikeRecording(
             indices_to_record, sim_timestep_ms, sim_ticks)
+        self.regions[Regions.statistics] = regions.Statistics(len(self.statistic_names))
 
         # If cell type has any receptors i.e. any need for synaptic input
         if len(cell_type.receptor_types) > 0:
@@ -213,8 +221,7 @@ class NeuralCluster(object):
         logger.debug("\t\t%u neuron vertices", len(neuron_slices))
 
 
-        # Build neuron vertices for each slice,
-        # allocating a keyspace for each vertex
+        # Build neuron vertices for each slice
         self.verts = []
         for vert_id, neuron_slice in enumerate(neuron_slices):
             # Create vertex
@@ -309,6 +316,15 @@ class NeuralCluster(object):
                  region.read_profile(v.region_memory[Regions.profiler],
                                      self.profiler_tag_names))
                 for v in self.verts]
+
+    def read_statistics(self):
+        # Get the statistics recording region
+        region = self.regions[Regions.statistics]
+
+        # Read stats from all vertices
+        return region.read_stats(
+            [v.region_memory[Regions.statistics] for v in self.verts],
+            self.statistic_names)
 
     # --------------------------------------------------------------------------
     # Private methods

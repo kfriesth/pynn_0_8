@@ -10,19 +10,26 @@ class RowOffsetLength
 {
 public:
   RowOffsetLength(){}
-  RowOffsetLength(uint32_t wordOffset) : m_WordOffset(wordOffset){}
+  RowOffsetLength(uint32_t word) : m_Word(word){}
+  RowOffsetLength(unsigned int numSynapses, unsigned int wordOffset)
+    : m_Word((uint32_t)(numSynapses - 1) | (uint32_t)(wordOffset << S)){}
 
   //--------------------------------------------------------------------------
   // Public API
   //--------------------------------------------------------------------------
   uint32_t GetNumSynapses() const
   {
-    return (m_WordOffset & RowSynapsesMask) + 1;
+    return (m_Word & RowSynapsesMask) + 1;
   }
 
   uint32_t GetWordOffset() const
   {
-    return (m_WordOffset >> S);
+    return (m_Word >> S);
+  }
+
+  uint32_t GetWord() const
+  {
+    return m_Word;
   }
 
 private:
@@ -34,6 +41,6 @@ private:
   //--------------------------------------------------------------------------
   // Members
   //--------------------------------------------------------------------------
-  uint32_t m_WordOffset;
+  uint32_t m_Word;
 };
 } // Common

@@ -3,11 +3,13 @@
 // Standard includes
 #include <cstdint>
 
+// Rig CPP common includes
+#include "rig_cpp_common/arm_intrinsics.h"
+#include "rig_cpp_common/log.h"
+#include "rig_cpp_common/utils.h"
+
 // Common includes
-#include "arm_intrinsics.h"
-#include "log.h"
 #include "row_offset_length.h"
-#include "utils.h"
 
 // Namespaces
 using namespace Common::ARMIntrinsics;

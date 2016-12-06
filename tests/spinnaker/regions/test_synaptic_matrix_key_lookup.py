@@ -9,7 +9,8 @@ import tempfile
 from collections import defaultdict
 from pynn_spinnaker.spinnaker.regions import (ExtendedPlasticSynapticMatrix,
                                               KeyLookupBinarySearch,
-                                              PlasticSynapticMatrix)
+                                              PlasticSynapticMatrix,
+                                              StaticSynapticMatrix)
 from rig.bitfield import BitField
 
 # Import globals
@@ -41,6 +42,8 @@ def _generate_random_matrix(pre_size, post_slice, row_length, multapse):
                          [(1000, utils.UnitStrideSlice(0, 1000), 100)])
 @pytest.mark.parametrize("pre_vert_size", [500, 1000])
 @pytest.mark.parametrize("synaptic_matrix_region", [
+    StaticSynapticMatrix(mock.Mock(_max_dtcm_delay_slots=7,
+                                   _signed_weight=False)),
     ExtendedPlasticSynapticMatrix(mock.Mock(_max_dtcm_delay_slots=7,
                                             _signed_weight=False,
                                             _pre_state_bytes=10,

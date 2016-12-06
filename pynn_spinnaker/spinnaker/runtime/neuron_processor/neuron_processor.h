@@ -19,6 +19,7 @@ enum Region
   RegionAnalogueRecordingStart,
   RegionAnalogueRecordingEnd = RegionAnalogueRecordingStart + 4,
   RegionProfiler = RegionAnalogueRecordingEnd,
+  RegionStatistics,
 };
 
 // Indexes of application words
@@ -35,6 +36,14 @@ enum ProfilerTag
   ProfilerTagSynapseShape,
   ProfilerTagUpdateNeurons,
   ProfilerTagApplyBuffer,
+};
+
+// Indices of statistic words
+enum StatWord
+{
+  StatWordTaskQueueFull,
+  StatWordNumTimerEventOverflows,
+  StatWordMax,
 };
 
 };  // namespace NeuronProcessor

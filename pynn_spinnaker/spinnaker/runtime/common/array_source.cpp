@@ -1,7 +1,7 @@
 #include "array_source.h"
 
-// Common includes
-#include "spinnaker.h"
+// Rig CPP common includes
+#include "rig_cpp_common/spinnaker.h"
 
 //-----------------------------------------------------------------------------
 // Common::ArraySource

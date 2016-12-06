@@ -1,8 +1,8 @@
 #pragma once
 
-// Common includes
-#include "../../common/fixed_point_number.h"
-#include "../../common/log.h"
+// Rig CPP common includes
+#include "rig_cpp_common/fixed_point_number.h"
+#include "rig_cpp_common/log.h"
 
 // Namespaces
 using namespace Common::FixedPointNumber;
@@ -26,6 +26,8 @@ public:
   enum RecordingChannel
   {
     RecordingChannelV,
+    RecordingChannelISynExc,
+    RecordingChannelISynInh,
     RecordingChannelMax,
   };
 
@@ -119,12 +121,18 @@ public:
 
   static S1615 GetRecordable(RecordingChannel c,
                              const MutableState &mutableState, const ImmutableState &,
-                             S1615, S1615, S1615)
+                             S1615 excInput, S1615 inhInput, S1615)
   {
     switch(c)
     {
       case RecordingChannelV:
         return mutableState.m_V_Membrane;
+
+      case RecordingChannelISynExc:
+        return excInput;
+
+      case RecordingChannelISynInh:
+        return inhInput;
 
       default:
         LOG_PRINT(LOG_LEVEL_WARN, "Attempting to get data from non-existant recording channel %u", c);

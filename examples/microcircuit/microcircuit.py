@@ -7,7 +7,7 @@ from sim_params import simulator_params, system_params
 sys.path.append(system_params['backend_path'])
 sys.path.append(system_params['pyNN_path'])
 from network_params import *
-# import logging # TODO! Remove if it runs without this line
+import logging
 import pyNN
 import time
 from neo.io import PyNNTextIO
@@ -15,9 +15,15 @@ import plotting
 
 
 # prepare simulation
-# logging.basicConfig() # TODO! Remove if it runs without this line
-exec('import pyNN.%s as sim' % simulator)
-#import pynn_spinnaker as sim
+if simulator == "pynn_spinnaker":
+    import pynn_spinnaker as sim
+
+    logger = logging.getLogger("pynn_spinnaker")
+    logger.setLevel(logging.INFO)
+    logger.addHandler(logging.StreamHandler())
+else:
+    exec('import pyNN.%s as sim' % simulator)
+#
 sim.setup(**simulator_params[simulator])
 import network
 

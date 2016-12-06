@@ -3,15 +3,18 @@
 // Standard includes
 #include <climits>
 
+// Rig CPP common includes
+#include "rig_cpp_common/config.h"
+#include "rig_cpp_common/fixed_point_number.h"
+#include "rig_cpp_common/log.h"
+#include "rig_cpp_common/profiler.h"
+#include "rig_cpp_common/spinnaker.h"
+#include "rig_cpp_common/statistics.h"
+#include "rig_cpp_common/utils.h"
+
 // Common includes
-#include "../common/config.h"
-#include "../common/fixed_point_number.h"
 #include "../common/flush.h"
-#include "../common/log.h"
-#include "../common/profiler.h"
 #include "../common/spike_recording.h"
-#include "../common/spinnaker.h"
-#include "../common/utils.h"
 
 // Neuron processor includes
 #include "analogue_recording.h"
@@ -66,6 +69,7 @@ IntrinsicPlasticity g_IntrinsicPlasticity;
 
 SpikeRecording g_SpikeRecording;
 AnalogueRecording g_AnalogueRecording[Neuron::RecordingChannelMax + IntrinsicPlasticity::RecordingChannelMax];
+Statistics<StatWordMax> g_Statistics;
 
 unsigned int g_InputBufferBeingProcessed = UINT_MAX;
 
@@ -258,6 +262,14 @@ bool ReadSDRAMData(uint32_t *baseAddress, uint32_t flags)
     return false;
   }
 
+  if(!g_Statistics.ReadSDRAMData(
+    Config::GetRegionStart(baseAddress, RegionStatistics),
+    flags))
+  {
+    return false;
+  }
+
+
   return true;
 }
 //-----------------------------------------------------------------------------
@@ -446,6 +458,13 @@ static void TimerTick(uint tick, uint)
 
     // Finalise profiling
     Profiler::Finalise();
+
+    // Copy diagnostic stats out of spin1 API
+    g_Statistics[StatWordTaskQueueFull] = diagnostics.task_queue_full;
+    g_Statistics[StatWordNumTimerEventOverflows] = diagnostics.total_times_tick_tic_callback_overran;
+
+    // Finalise statistics
+    g_Statistics.Finalise();
     
     // Exit simulation
     spin1_exit(0);

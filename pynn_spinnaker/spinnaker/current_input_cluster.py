@@ -6,7 +6,7 @@ from rig import machine
 
 # Import classes
 from collections import defaultdict
-from utils import (Args, InputVertex)
+from utils import Args, InputVertex
 
 # Import functions
 from six import iteritems
@@ -68,8 +68,10 @@ class CurrentInputCluster(object):
         # Loop through slice
         self.verts = []
         for post_slice in post_slices:
-            # Estimate SDRAM usage
+            # Estimate SDRAM usage and check
+            # it's an integer as otherwise C CSA fails
             sdram = self._estimate_sdram(post_slice)
+            assert isinstance(sdram, int)
             logger.debug("\t\t\tPost slice %s: %u bytes SDRAM",
                          str(post_slice), sdram)
 

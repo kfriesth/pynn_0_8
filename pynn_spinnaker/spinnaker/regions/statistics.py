@@ -1,6 +1,9 @@
 # Import modules
+import itertools
 import logging
+import numpy as np
 import struct
+
 
 # Import classes
 from region import Region
@@ -43,10 +46,22 @@ class Statistics(Region):
     # --------------------------------------------------------------------------
     # Public API
     # --------------------------------------------------------------------------
-    def read_stats(self, region_memory):
-        # Seek to start
-        region_memory.seek(0)
+    def read_stats(self, vertex_region_memory, statistic_names):
+        # Loop through list of statistic recording memory views
+        stats = []
+        for m in vertex_region_memory:
+            # Seek to start
+            m.seek(0)
 
-        # Read statistics and return
-        return struct.unpack("%uI" % self.n_statistics,
-                             region_memory.read(self.n_statistics * 4))
+            # Read statistics and add to list
+            stats.append(struct.unpack("%uI" % self.n_statistics,
+                                       m.read(self.n_statistics * 4)))
+        # Convert stats to numpy array
+        np_stats = np.asarray(stats)
+
+        # Convert stats into record array
+        stat_names = ",".join(statistic_names)
+        stat_format = ",".join(
+            itertools.repeat("u4", len(statistic_names)))
+        return np.core.records.fromarrays(np_stats.T, names=stat_names,
+                                          formats=stat_format)

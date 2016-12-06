@@ -30,13 +30,13 @@ class StaticSynapse(synapses.StaticSynapse):
     # Internal SpiNNaker properties
     # --------------------------------------------------------------------------
     # How many post-synaptic neurons per core can a
-    # SpiNNaker synapse_processor of this type handle
+    # SpiNNaker synapse processor of this type handle
     _max_post_neurons_per_core = 1024
 
-    # Assuming relatively long row length, at what rate can a SpiNNaker
-    # synapse_processor of this type process synaptic events (hZ)
-    _max_synaptic_event_rate = 9E6
+    # How many CPU cycles are spent doing non-row processing things
+    _constant_cpu_overhead = 3.85E6
 
+    # What format of synaptic matrix does this synapse type require
     _synaptic_matrix_region_class = regions.StaticSynapticMatrix
 
     # How many timesteps of delay can DTCM ring-buffer handle
@@ -55,6 +55,17 @@ class StaticSynapse(synapses.StaticSynapse):
     @property
     def _comparable_properties(self):
         return (self.__class__,)
+
+    # How many CPU cycles does it take to process a row
+    def _get_row_cpu_cost(self, row_length, **kwargs):
+        # How many CPU cycles does it take to fetch a row
+        # and initialize the synapse processing loop
+        constant_cost = 486 + 53
+
+        # How many CPU cycles does it take to process a synapse
+        synapse_cost = 15
+
+        return constant_cost + (synapse_cost * row_length)
 
 # ------------------------------------------------------------------------------
 # STDPMechanism
@@ -81,10 +92,10 @@ class STDPMechanism(synapses.STDPMechanism):
     # SpiNNaker synapse_processor of this type handle
     _max_post_neurons_per_core = 512
 
-    # Assuming relatively long row length, at what rate can a SpiNNaker
-    # synapse_processor of this type process synaptic events (hZ)
-    _max_synaptic_event_rate = 1.2E6
+    # How many CPU cycles are spent doing non-row processing things
+    _constant_cpu_overhead = 11.15E6
 
+    # What format of synaptic matrix does this synapse type require
     _synaptic_matrix_region_class = regions.PlasticSynapticMatrix
 
     # How many timesteps of delay can DTCM ring-buffer handle
@@ -128,6 +139,17 @@ class STDPMechanism(synapses.STDPMechanism):
         return (self.__class__.__name__.lower() + "_" +
                 self.weight_dependence.__class__.__name__.lower() + "_" +
                 self.timing_dependence.__class__.__name__.lower())
+
+    # How many CPU cycles does it take to process a row
+    def _get_row_cpu_cost(self, row_length, pre_rate, post_rate, **kwargs):
+        # How many CPU cycles does it take to fetch a row
+        # and initialize the synapse processing loop
+        constant_cost = 1143 + 226
+
+        # How many CPU cycles does it take to process a synapse
+        synapse_cost = 107 + (30 * (float(post_rate) / float(pre_rate)))
+
+        return constant_cost + (synapse_cost * row_length)
 
 # ------------------------------------------------------------------------------
 # AdditiveWeightDependence

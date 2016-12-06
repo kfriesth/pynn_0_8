@@ -122,6 +122,9 @@ class SynapseCluster(object):
         "delay_buffers_not_processed",
         "input_buffer_overflows",
         "key_lookup_fails",
+        "delay_buffer_overflows",
+        "task_queue_full",
+        "timer_event_overflows",
     )
 
     def __init__(self, sim_timestep_ms, timer_period_us, sim_ticks,
@@ -135,7 +138,7 @@ class SynapseCluster(object):
         self.regions[Regions.key_lookup] = regions.KeyLookupBinarySearch()
         self.regions[Regions.output_buffer] = regions.OutputBuffer()
         self.regions[Regions.delay_buffer] = regions.DelayBuffer(
-            synapse_model._max_synaptic_event_rate,
+            1E6,
             sim_timestep_ms, max_delay_ms)
         self.regions[Regions.back_prop_input] = regions.SDRAMBackPropInput()
         self.regions[Regions.connection_builder] = regions.ConnectionBuilder(
@@ -183,7 +186,7 @@ class SynapseCluster(object):
 
             # Loop through all non-directly connectable
             # projections of this type
-            vert_event_rate = 0.0
+            vert_cpu_cycles = synapse_model._constant_cpu_overhead
             vert_sdram_bytes = 0
             vert_incoming_connections = defaultdict(list)
             for proj in synaptic_projections:
@@ -199,47 +202,37 @@ class SynapseCluster(object):
                     logger.debug("\t\t\t\t\tPre slice:%s",
                                  str(pre_vertex.neuron_slice))
 
-                    # Estimate number of synapses the connection between
-                    # The pre and the post-slice of neurons will contain
-                    total_synapses = proj._estimate_num_synapses(
-                        pre_vertex.neuron_slice, post_slice)
+                    # Estimate max dimensions of sub-matrix
+                    max_cols, max_sub_rows, max_sub_row_length =\
+                        proj._estimate_max_dims(pre_vertex.neuron_slice,
+                                                post_slice)
 
                     # If this projection doesn't result in any
                     # synapses don't add connection
-                    if total_synapses == 0:
+                    if max_cols == 0 and max_sub_rows == 0:
                         logger.debug("\t\t\t\t\t\tNo synapses")
                         continue
 
-                    # Use this to calculate event rate
-                    pre_mean_rate = proj.pre.spinnaker_config.mean_firing_rate
-                    pre_rate = total_synapses * pre_mean_rate
-
-                    # Estimate MAXIMUM number of synapses that may be in a row
-                    max_row_synapses = proj._estimate_max_row_synapses(
-                        pre_vertex.neuron_slice, post_slice)
+                    # Estimate CPU cycles required to process sub-matrix
+                    cpu_cycles = proj._estimate_spike_processing_cpu_cycles(
+                        pre_vertex.neuron_slice, post_slice,
+                        pre_rate=proj.pre.spinnaker_config.mean_firing_rate,
+                        post_rate=proj.post.spinnaker_config.mean_firing_rate)
 
                     # Estimate size of matrix
                     synaptic_matrix = self.regions[Regions.synaptic_matrix]
-                    sdram_bytes = synaptic_matrix.estimate_matrix_bytes(
-                        pre_vertex.neuron_slice, max_row_synapses)
+                    sdram_bytes = synaptic_matrix.estimate_matrix_words(
+                        len(pre_vertex.neuron_slice), max_cols,
+                        max_sub_rows, max_sub_row_length) * 4
 
-                    logger.debug("\t\t\t\t\t\tTotal synapses:%d, "
-                                 "synaptic event rate:%f Hz, SDRAM:%u bytes",
-                                 total_synapses, pre_rate, sdram_bytes)
+                    logger.debug("\t\t\t\t\t\tCPU cycles:%u, SDRAM:%u bytes",
+                                 cpu_cycles, sdram_bytes)
 
-                    # Add this connection to the synapse vertex
-                    vert_incoming_connections[proj.pre].append(pre_vertex)
-
-                    # Add event rate and SDRAM to totals
-                    # for current synapse processor
-                    vert_event_rate += pre_rate
-                    vert_sdram_bytes += sdram_bytes
-
-                    # If the event rate is more than this type of synapse
-                    # processor can handle or the matrix requires more
-                    # than the 16mb the key lookup data structure can address
-                    if (vert_event_rate > synapse_model._max_synaptic_event_rate
-                        or vert_sdram_bytes > (16 * 1024 * 1024)):
+                    # If adding this projection would overtax the
+                    # processor or overflow the 16mb limit on synaptic
+                    # data imposed by the key lookup data structure
+                    if ((vert_cpu_cycles + cpu_cycles) >= 200E6
+                        or (vert_sdram_bytes + sdram_bytes) > (16 * 1024 * 1024)):
                         # Create vertex
                         vert = Vertex(post_slice, receptor_index,
                                       vert_incoming_connections,
@@ -249,14 +242,21 @@ class SynapseCluster(object):
                         self.verts.append(vert)
                         frontend.add_machine_vertex(vert)
 
-                        logger.debug("\t\t\t\t\t\tVertex: total event rate:%f Hz, SDRAM:%u bytes",
-                                     vert_event_rate, vert_sdram_bytes)
+                        logger.debug("\t\t\t\t\tVertex: Used CPU cycles:%u, SDRAM:%u bytes",
+                                     vert_cpu_cycles, vert_sdram_bytes)
 
-                        # Create new list of incoming connections
-                        # for next vert and reset counters
+                        # Create replacement and reset event rate and SDRAM
                         vert_incoming_connections = defaultdict(list)
-                        vert_event_rate = 0.0
+                        vert_cpu_cycles = synapse_model._constant_cpu_overhead
                         vert_sdram_bytes = 0
+
+                    # Add this connection to the synapse vertex
+                    vert_incoming_connections[proj.pre].append(pre_vertex)
+
+                    # Add cycles and SDRAM to totals
+                    # for current synapse processor
+                    vert_cpu_cycles += cpu_cycles
+                    vert_sdram_bytes += sdram_bytes
 
             # If the last synapse vertex created had any incoming connections
             if len(vert_incoming_connections) > 0:
@@ -268,8 +268,8 @@ class SynapseCluster(object):
                 # Add to list and frontend
                 self.verts.append(vert)
                 frontend.add_machine_vertex(vert)
-                logger.debug("\t\t\t\t\t\tVertex: total event rate:%f Hz, SDRAM:%u bytes",
-                             vert_event_rate, vert_sdram_bytes)
+                logger.debug("\t\t\t\t\tVertex: Used CPU cycles:%u, SDRAM:%u bytes",
+                             vert_cpu_cycles, vert_sdram_bytes)
 
         logger.debug("\t\t\t%u synapse vertices", len(self.verts))
 
@@ -347,12 +347,18 @@ class SynapseCluster(object):
                         # Cache original post mask (due to above
                         # this is slightly pointless but still)
                         old_post_mask = proj.post._mask_local
+                        old_num_processes = proj._simulator.state.num_processes
 
                         # Create new local mask to select only the columns
                         # corresponding to neurons in postsynaptic vertex
                         proj.post._mask_local = np.zeros((proj.post.size,),
                                                          dtype=bool)
                         proj.post._mask_local[post_slice.python_slice] = True
+
+                        # Some connectors also use num_processes for
+                        # partial connector building so override this too
+                        proj._simulator.state.num_processes =\
+                            len(self.post_slices)
 
                         # Cache original connector callback
                         old_connector_callback = proj._connector.callback
@@ -363,9 +369,11 @@ class SynapseCluster(object):
                                     weight_range=weight_range,
                                     directly_connect=False)
 
-                        # Restore old mask and connector callback
+                        # Restore old mask, connector callback
+                        # and number of processes
                         proj.post._mask_local = old_post_mask
                         proj._connector.callback = old_connector_callback
+                        proj._simulator.state.num_processes = old_num_processes
 
                     # Convert rows to numpy and add to dictionary
                     pre_pop_sub_rows[pre_pop] = [np.asarray(r, dtype=row_dtype)
@@ -466,15 +474,10 @@ class SynapseCluster(object):
         # Get the statistics recording region
         region = self.regions[Regions.statistics]
 
-        # Convert stats to numpy array
-        np_stats = np.asarray([region.read_stats(v.region_memory[Regions.statistics])
-                            for v in self.verts])
-        # Convert stats into record array
-        stat_names = ",".join(self.statistic_names)
-        stat_format = ",".join(
-            itertools.repeat("u4", len(self.statistic_names)))
-        return np.core.records.fromarrays(np_stats.T, names=stat_names,
-                                          formats=stat_format)
+        # Read stats from all vertices
+        return region.read_stats(
+            [v.region_memory[Regions.statistics] for v in self.verts],
+            self.statistic_names)
 
     def read_synaptic_matrices(self, pre_pop, names, sim_timestep_ms,
                                routing_info):

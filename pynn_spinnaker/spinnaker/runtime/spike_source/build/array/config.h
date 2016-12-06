@@ -1,6 +1,6 @@
 #pragma once
 
-// Model includes
+// Common includes
 #include "../../../common/array_source.h"
 
 namespace SpikeSource

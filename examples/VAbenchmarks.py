@@ -52,8 +52,7 @@ use_assembly = False
 benchmark = "CUBA"
 use_csa = False
 
-neurons_per_core = 1024
-rate_estimate = 4.1
+rate_estimate = 5.0
 
 rngseed  = 98765
 rng = NumpyRNG(seed=rngseed)
@@ -68,9 +67,6 @@ if spinnaker:
     setup_kwargs = {"spinnaker_hostname": "192.168.1.1"}
 
     rng = sim.NativeRNG(host_rng=rng)
-
-    #setup_kwargs["generate_connections_on_chip"] =  False
-    #setup_kwargs["stop_on_spinnaker"] = False
 else:
     import pyNN.nest as sim
 
@@ -161,7 +157,6 @@ if use_views:
 
     if spinnaker:
         all_cells.spinnaker_config.mean_firing_rate = rate_estimate
-        all_cells.spinnaker_config.max_neurons_per_core = neurons_per_core
 
         if profile:
             all_cells.spinnaker_config.num_profile_samples = 1E5
@@ -178,10 +173,6 @@ else:
     if spinnaker:
         exc_cells.spinnaker_config.mean_firing_rate = rate_estimate
         inh_cells.spinnaker_config.mean_firing_rate = rate_estimate
-
-        exc_cells.spinnaker_config.max_neurons_per_core = neurons_per_core
-        inh_cells.spinnaker_config.max_neurons_per_core = neurons_per_core
-
         if profile:
             exc_cells.spinnaker_config.num_profile_samples = 1E5
             inh_cells.spinnaker_config.num_profile_samples = 1E5

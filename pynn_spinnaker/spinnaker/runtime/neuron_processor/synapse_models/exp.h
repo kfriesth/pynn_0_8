@@ -1,8 +1,8 @@
 #pragma once
 
-// Common includes
-#include "../../common/fixed_point_number.h"
-#include "../../common/spinnaker.h"
+// Rig CPP common includes
+#include "rig_cpp_common/fixed_point_number.h"
+#include "rig_cpp_common/spinnaker.h"
 
 // Namespaces
 using namespace Common::FixedPointNumber;

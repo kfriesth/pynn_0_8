@@ -70,4 +70,4 @@ class DelayBuffer(Region):
         max_cols = max(s.max_cols for s in sub_matrix_props)
 
         # Use this to scale events per tick into rows per tick
-        return min(255, self.max_events_per_tick // max_cols)
+        return max(1, min(255, self.max_events_per_tick // max_cols))

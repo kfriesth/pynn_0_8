@@ -47,6 +47,9 @@ enum StatWord
   StatWordDelayBuffersNotProcessed,
   StatWordInputBufferOverflows,
   StatWordKeyLookupFail,
+  StatWordDelayBufferOverflows,
+  StatWordTaskQueueFull,
+  StatWordNumTimerEventOverflows,
   StatWordMax,
 };
 

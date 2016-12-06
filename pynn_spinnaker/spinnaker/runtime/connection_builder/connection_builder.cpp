@@ -1,11 +1,13 @@
 #include "connection_builder.h"
 
+// Rig CPP common includes
+#include "rig_cpp_common/config.h"
+#include "rig_cpp_common/log.h"
+#include "rig_cpp_common/spinnaker.h"
+#include "rig_cpp_common/random/mars_kiss64.h"
+
 // Common includes
-#include "../common/config.h"
-#include "../common/log.h"
 #include "../common/key_lookup_binary_search.h"
-#include "../common/spinnaker.h"
-#include "../common/random/mars_kiss64.h"
 
 // Connection builder includes
 #include "connector_generator.h"
@@ -36,7 +38,7 @@ uint32_t *g_SynapticMatrixBaseAddress = NULL;
 // Factories to create matrix, connector and parameter generators by ID
 GeneratorFactory<MatrixGenerator::Base, 3> g_MatrixGeneratorFactory;
 GeneratorFactory<ConnectorGenerator::Base, 5> g_ConnectorGeneratorFactory;
-GeneratorFactory<ParamGenerator::Base, 5> g_ParamGeneratorFactory;
+GeneratorFactory<ParamGenerator::Base, 10> g_ParamGeneratorFactory;
 
 // Memory buffers to placement new generators into
 void *g_MatrixGeneratorBuffer = NULL;
@@ -83,13 +85,14 @@ bool ReadConnectionBuilderRegion(uint32_t *region, uint32_t)
   {
     // Read basic matrix properties
     const uint32_t key = *region++;
+    const uint32_t sizeWords = *region++;
     const uint32_t numRows = *region++;
     const uint32_t matrixTypeHash = *region++;
     const uint32_t connectorTypeHash = *region++;
     const uint32_t delayTypeHash = *region++;
     const uint32_t weightTypeHash = *region++;
-    LOG_PRINT(LOG_LEVEL_INFO, "\tMatrix %u: key %08x, num rows:%u, matrix type hash:%u, connector type hash:%u, delay type hash:%u, weight type hash:%u",
-              i, key, numRows, matrixTypeHash, connectorTypeHash, delayTypeHash, weightTypeHash);
+    LOG_PRINT(LOG_LEVEL_INFO, "\tMatrix %u: key %08x, size words:%u, num rows:%u, matrix type hash:%u, connector type hash:%u, delay type hash:%u, weight type hash:%u",
+              i, key, sizeWords, numRows, matrixTypeHash, connectorTypeHash, delayTypeHash, weightTypeHash);
 
     // Generate matrix, connector, delays and weights
     const auto matrixGenerator = g_MatrixGeneratorFactory.Create(matrixTypeHash, region,
@@ -124,11 +127,17 @@ bool ReadConnectionBuilderRegion(uint32_t *region, uint32_t)
       // Generate matrix
       LOG_PRINT(LOG_LEVEL_INFO, "\t\tAddress:%08x, row synapses:%u",
                 matrixAddress, matrixRowSynapses);
-      matrixGenerator->Generate(matrixAddress, matrixRowSynapses,
-                                g_AppWords[AppWordWeightFixedPoint],
-                                g_AppWords[AppWordNumPostNeurons], numRows,
-                                connectorGenerator, delayGenerator, weightGenerator,
-                                rng);
+      if(!matrixGenerator->Generate(g_SynapticMatrixBaseAddress, matrixAddress,
+                                    matrixRowSynapses,
+                                    g_AppWords[AppWordWeightFixedPoint],
+                                    g_AppWords[AppWordNumPostNeurons],
+                                    sizeWords, numRows,
+                                    connectorGenerator, delayGenerator, weightGenerator,
+                                    rng))
+      {
+        LOG_PRINT(LOG_LEVEL_ERROR, "\tMatrix generation failed");
+        return false;
+      }
 
     }
     else
@@ -217,6 +226,10 @@ extern "C" void c_main()
   LOG_PRINT(LOG_LEVEL_INFO, "Parameter generators");
   REGISTER_FACTORY_CLASS("constant", ParamGenerator, Constant);
   REGISTER_FACTORY_CLASS("uniform", ParamGenerator, Uniform);
+  REGISTER_FACTORY_CLASS("normal", ParamGenerator, Normal);
+  REGISTER_FACTORY_CLASS("normal_clipped", ParamGenerator, NormalClipped);
+  REGISTER_FACTORY_CLASS("normal_clipped_to_boundary", ParamGenerator, NormalClippedToBoundary);
+  REGISTER_FACTORY_CLASS("exponential", ParamGenerator, Exponential);
 
   // Allocate buffers for placement new from factories
   // **NOTE** we need to be able to simultaneously allocate a delay and

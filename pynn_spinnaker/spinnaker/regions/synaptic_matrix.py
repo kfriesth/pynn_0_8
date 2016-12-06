@@ -142,8 +142,23 @@ class SynapticMatrix(Region):
     # --------------------------------------------------------------------------
     # Public methods
     # --------------------------------------------------------------------------
-    def estimate_matrix_bytes(self, pre_slice, max_row_synapses):
-        return self._get_num_row_words(max_row_synapses) * len(pre_slice) * 4
+    def estimate_matrix_words(self, num_pre, max_cols, max_sub_rows,
+                              max_sub_row_length):
+        # Because of the number of bits available for storing
+        # max_cols, rows with 0 synapses cannot be represented
+        max_cols = max(1, max_cols)
+
+        # Calculate the 'width' in words of
+        # the ragged portion of the synaptic matrix
+        ragged_words = self._get_num_row_words(max_cols)
+
+        # Calculate the maximum size in words of the delays
+        # sub-rows associated with any pre-synaptic neuron
+        delay_words = (max_sub_rows *
+                       self._get_num_row_words(max_sub_row_length))
+
+        # Calculate final size
+        return num_pre * (ragged_words + delay_words)
 
     def partition_matrices(self, routing_info, post_vertex_slice,
                            pre_pop_sub_rows, incoming_connections):
@@ -254,27 +269,24 @@ class SynapticMatrix(Region):
 
             # Loop through presynaptic vertices
             for pre_n_vert in pre_n_verts:
-                # Estimate maximum row length
-                max_cols = proj._estimate_max_row_synapses(
-                    pre_n_vert.neuron_slice, post_vertex_slice)
+                # Estimate max dimensions of sub-matrix
+                max_cols, max_sub_rows, max_sub_row_length =\
+                    proj._estimate_max_dims(pre_n_vert.neuron_slice,
+                                            post_vertex_slice)
 
-                # If matrix has any columns
-                if max_cols > 0:
-                    # **TODO** this takes no account of extension rows
-
-                    # Count rows
-                    num_rows = len(pre_n_vert.neuron_slice)
-
-                    # Calculate matrix size in words -
-                    # size of square matrix
-                    size_words = num_rows * self._get_num_row_words(max_cols)
+                # If sub-matrix has any synapses
+                if max_cols > 0 or max_sub_rows > 0:
+                    # Estimate the maximum size of this in SDRAM
+                    size_words = self.estimate_matrix_words(
+                        len(pre_n_vert.neuron_slice), max_cols,
+                        max_sub_rows, max_sub_row_length)
 
                     # Add sub matrix to list
                     sub_matrix_props.append(
                         SubMatrix(pre_n_vert.get_routing_key(routing_info),
                                   pre_n_vert.get_routing_mask(routing_info),
-                                  size_words, max_cols))
-                    sub_matrix_projs.append((proj, num_rows))
+                                  size_words, max(1, max_cols)))
+                    sub_matrix_projs.append((proj, len(pre_n_vert.neuron_slice)))
 
         return sub_matrix_props, sub_matrix_projs
 

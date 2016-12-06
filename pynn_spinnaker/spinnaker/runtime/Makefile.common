@@ -61,6 +61,19 @@ else
   TOOLS_DIR := ../../tools
 endif
 
+ifdef PROFILER_ENABLED
+	BUILDDIR = build_profiled
+	CFLAGS += -DPROFILER_ENABLED
+	APP = $(PYNN_APP)_profiled
+else
+	BUILDDIR = build
+	APP = $(PYNN_APP)
+endif
+
+ifdef LOG_LEVEL
+	CFLAGS += -DLOG_LEVEL=$(LOG_LEVEL)
+endif
+
 #-------------------------------------------------------------------------------
 
 # Set up the various compile/link options for GNU and ARM tools
@@ -135,21 +148,31 @@ CP  := \cp
 RM  := \rm -f
 LS  := \ls -l
 
-#-------------------------------------------------------------------------------
 
-# Build the application
+# Find Rig CPP common directory
+RIG_CPP_COMMON := $(shell rig_cpp_common_path)
+RIG_CPP_COMMON_RUNTIME = $(RIG_CPP_COMMON)/runtime
 
 # Get absolute path of THIS make file i.e. the runtime directory
-RUNTIME := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+PYNN_RUNTIME := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
 # Get absolute paths of sources
-ABSOLUTE_SOURCES = $(abspath $(SOURCES))
+ABSOLUTE_PYNN_SOURCES = $(abspath $(PYNN_SOURCES))
 
 # Make these relative to the spinnaker_components directory
-RELATIVE_SOURCES := $(ABSOLUTE_SOURCES:$(RUNTIME)/%.cpp=%.cpp)
+RELATIVE_PYNN_SOURCES := $(ABSOLUTE_PYNN_SOURCES:$(PYNN_RUNTIME)/%.cpp=%.cpp)
 
 # Construct the list of objects to build - in subdirectories beneath $(BUILDDIR)
-OBJECTS = $(RELATIVE_SOURCES:%.cpp=$(BUILDDIR)/%.o)
+OBJECTS = $(RELATIVE_PYNN_SOURCES:%.cpp=$(BUILDDIR)/pynn_spinnaker/%.o)
+OBJECTS += $(RIG_CPP_COMMON_SOURCES:%.cpp=$(BUILDDIR)/rig_cpp_common/%.o)
+
+# Set standard libraries and C flags
+LIBRARIES = -lspin1_api
+CFLAGS += -Wall -Wextra -Ofast -fno-rtti -fno-exceptions -I $(RIG_CPP_COMMON_RUNTIME)
+LFLAGS += -nodefaultlibs
+
+# If it is not set already, use standard app directory
+APP_DIR ?= $(PYNN_RUNTIME)/../../standardmodels/binaries
 
 # Primary target is an APLX file - built from the ELF
 
@@ -188,15 +211,26 @@ $(APP).elf: $(OBJECTS) $(SCRIPT) $(LIBRARY)
 	$(RM) sark_build.c sark_build.o
 	$(OD) $(APP).elf
 
-# Build C source files into object files
-$(BUILDDIR)/%.o: $(RUNTIME)/%.c $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
+# Build PyNN SpiNNaker  C source files into object files
+$(BUILDDIR)/pynn_spinnaker/%.o: $(PYNN_RUNTIME)/%.c $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
 	-mkdir -p $(dir $@)
 	$(CC) -std=gnu99 $(CFLAGS) $< -o $@
 
-# Build C++ source files into object files
-$(BUILDDIR)/%.o: $(RUNTIME)/%.cpp $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
+# Build PyNN SpiNNaker C++ source files into object files
+$(BUILDDIR)/pynn_spinnaker/%.o: $(PYNN_RUNTIME)/%.cpp $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
 	-mkdir -p $(dir $@)
 	$(CC) -std=c++11 $(CFLAGS) $< -o $@
+
+# Build Rig CPP common C source files into object files
+$(BUILDDIR)/rig_cpp_common/%.o: $(RIG_CPP_COMMON_RUNTIME)/%.c $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
+	-mkdir -p $(dir $@)
+	$(CC) -std=gnu99 $(CFLAGS) $< -o $@
+
+# Build Rig CPP common C++ source files into object files
+$(BUILDDIR)/rig_cpp_common/%.o: $(RIG_CPP_COMMON_RUNTIME)/%.cpp $(INC_DIR)/spinnaker.h $(INC_DIR)/sark.h $(INC_DIR)/spin1_api.h
+	-mkdir -p $(dir $@)
+	$(CC) -std=c++11 $(CFLAGS) $< -o $@
+
 
 # Tidy and cleaning dependencies
 

@@ -149,7 +149,7 @@ class ConnectionBuilder(Region):
             connector = proj[0]._connector
 
             # Add words for key and type hashes to size
-            size += (6 * 4)
+            size += (7 * 4)
 
             # Add size required for any synaptic matrix parameters
             size += lazy_param_map.size(synaptic_matrix.OnChipParamMap, 1)
@@ -210,14 +210,14 @@ class ConnectionBuilder(Region):
             weight = synapse_type.native_parameters["weight"]
 
             logger.debug("\t\t\t\t\tWriting connection builder data for "
-                "projection key:%08x, num rows:%u, matrix type:%s, "
-                "connector type:%s, delay type:%s, weight type:%s, ",
-                prop.key, proj[1], synaptic_matrix.__name__,
+                "projection key:%08x, num words:%u, num rows:%u, "
+                "matrix type:%s, connector type:%s, delay type:%s, weight type:%s, ",
+                prop.key, prop.size_words, proj[1], synaptic_matrix.__name__,
                 connector.__class__.__name__, _get_param_type_name(delay),
                 _get_param_type_name(weight))
 
             # Write header
-            fp.write(struct.pack("6I", prop.key, proj[1],
+            fp.write(struct.pack("7I", prop.key, prop.size_words, proj[1],
                                  _crc_u32(synaptic_matrix.__name__),
                                  _crc_u32(connector.__class__.__name__),
                                  _crc_u32(_get_param_type_name(delay)),

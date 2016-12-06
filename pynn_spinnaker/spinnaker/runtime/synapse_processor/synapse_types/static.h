@@ -3,8 +3,8 @@
 // Standard includes
 #include <cstdint>
 
-// Common includes
-#include "../../common/log.h"
+// Rig CPP common includes
+#include "rig_cpp_common/log.h"
 
 //-----------------------------------------------------------------------------
 // SynapseProcessor::SynapseTypes::Static

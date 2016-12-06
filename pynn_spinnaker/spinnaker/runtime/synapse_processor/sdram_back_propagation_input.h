@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <cstdint>
 
-// Common includes
-#include "../common/bit_field.h"
-#include "../common/log.h"
-#include "../common/spinnaker.h"
-#include "../common/utils.h"
+// Rig CPP common includes
+#include "rig_cpp_common/bit_field.h"
+#include "rig_cpp_common/log.h"
+#include "rig_cpp_common/spinnaker.h"
+#include "rig_cpp_common/utils.h"
 
 // Namespaces
 using namespace Common;

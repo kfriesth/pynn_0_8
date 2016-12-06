@@ -17,7 +17,7 @@ from pyNN.common.control import (DEFAULT_MAX_DELAY, DEFAULT_TIMESTEP,
                                  DEFAULT_MIN_DELAY)
 from pyNN.recording import *
 
-import profiling
+from rig_cpp_common import profiling
 import simulator
 
 from .standardmodels.cells import *
@@ -64,6 +64,8 @@ def setup(timestep=DEFAULT_TIMESTEP, min_delay=DEFAULT_MIN_DELAY,
         extra_params.get("generate_connections_on_chip", True)
     simulator.state.stop_on_spinnaker =\
         extra_params.get("stop_on_spinnaker", True)
+    simulator.state.stop_after_loader =\
+        extra_params.get("stop_after_loader", False)
     simulator.state.disable_software_watchdog =\
         extra_params.get("disable_software_watchdog", False)
     simulator.state.allocation_fudge_factor =\

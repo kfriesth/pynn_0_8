@@ -23,8 +23,8 @@ from spinn_front_end_common.abstract_models.abstract_starts_synchronized \
 from spinnman.utilities.io.memory_io import MemoryIO
 
 # Import functions
-from copy import (copy, deepcopy)
-from six import (iteritems, iterkeys)
+from copy import copy, deepcopy
+from six import iteritems, iterkeys
 
 logger = logging.getLogger("pynn_spinnaker")
 
@@ -37,7 +37,7 @@ class Args(namedtuple("Args", "args, kwargs")):
 
 
 # ----------------------------------------------------------------------------
-# Args
+# InputBuffer
 # ----------------------------------------------------------------------------
 InputBuffer = namedtuple("InputBuffer",
                          ["pointers", "start_neuron", "num_neurons",
@@ -223,6 +223,9 @@ def calc_bitfield_words(bits):
 def calc_slice_bitfield_words(vertex_slice):
     return calc_bitfield_words(len(vertex_slice))
 
+
+def calc_timestep_mul(hardware_timestep_us):
+    return min(1.0, float(hardware_timestep_us) / 1000.0)
 
 def combine_row_offset_length(offset, length, num_length_bits):
     assert length >= 1 and length <= (2 ** num_length_bits)

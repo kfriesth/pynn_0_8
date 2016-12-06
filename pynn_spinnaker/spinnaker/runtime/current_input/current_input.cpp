@@ -1,11 +1,13 @@
 #include "current_input.h"
 
+// Rig CPP common includes
+#include "rig_cpp_common/config.h"
+#include "rig_cpp_common/log.h"
+#include "rig_cpp_common/profiler.h"
+#include "rig_cpp_common/spinnaker.h"
+
 // Common includes
-#include "../common/config.h"
-#include "../common/log.h"
-#include "../common/profiler.h"
 #include "../common/spike_recording.h"
-#include "../common/spinnaker.h"
 
 // Configuration include
 #include "config.h"

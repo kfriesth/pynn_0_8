@@ -27,7 +27,8 @@ class Network:
             self.pops[layer] = {}
             for pop in pops:
                 self.pops[layer][pop] = sim.Population(int(N_full[layer][pop] * \
-                    N_scaling), model, cellparams=neuron_params)
+                    N_scaling), model, cellparams=neuron_params,
+                    label="%s%s" % (layer, pop))
                 self.pops[layer][pop].initialize(v=distr)
                 # Store whether population is inhibitory or excitatory
                 self.pops[layer][pop].annotate(type=pop)
@@ -81,6 +82,7 @@ class Network:
             self.w, self.w_ext, self.K_ext, self.DC_amp = scaling.adjust_w_and_ext_to_K(K_full, K_scaling, self.w, self.DC_amp)
         else:
             self.w_ext = w_ext
+            self.K_ext = K_ext
 
         if sim.rank() == 0:
             print('w: %s' % self.w)
@@ -95,7 +97,8 @@ class Network:
                 if input_type == 'poisson':
                     poisson_generator = sim.Population(this_pop.size,
                                                        sim.SpikeSourcePoisson, {
-                                                           'rate': bg_rate * self.K_ext[target_layer][target_pop]})
+                                                           'rate': bg_rate * self.K_ext[target_layer][target_pop]},
+                                                       label="stim_%s%s" % (target_layer, target_pop))
                     conn = sim.OneToOneConnector()
                     syn = sim.StaticSynapse(weight=self.w_ext)
                     sim.Projection(poisson_generator, this_pop, conn, syn, receptor_type='excitatory')

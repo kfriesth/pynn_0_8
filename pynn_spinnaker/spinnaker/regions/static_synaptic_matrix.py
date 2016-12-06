@@ -43,4 +43,25 @@ class StaticSynapticMatrix(SynapticMatrix):
                           | (weight_fixed << self.WeightShift))
 
     def _read_synapses(self, synapse_words, weight_to_float, dtype, synapses):
-        raise NotImplementedError()
+        # Slice out synapses
+        synapse_words = synapse_words[:len(synapses)]
+
+        # If weights are required
+        if "weight" in dtype.names:
+            # Extract fixed-point weights
+            weights = synapse_words >> self.WeightShift
+            weights = weights.astype(np.int32 if self.signed_weight
+                                     else np.uint32)
+
+            # Convert the weight view to floating point
+            synapses["weight"] = weight_to_float(weights)
+
+        # Extract the delays if required
+        if "delay" in dtype.names:
+            delay_mask = (1 << self.DelayBits) - 1
+            synapses["delay"] = (synapse_words >> self.IndexBits) & delay_mask
+
+        # Extract the post-synaptic index if required
+        if "postsynaptic_index" in dtype.names:
+            index_mask = (1 << self.IndexBits) - 1
+            synapses["postsynaptic_index"] = synapse_words & index_mask

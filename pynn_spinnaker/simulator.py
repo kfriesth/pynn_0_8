@@ -306,6 +306,21 @@ class State(common.control.BaseState):
                             np.sum(stats["input_buffer_overflows"]))
                 logger.info("\t\t\tKey lookup failures:%u",
                             np.sum(stats["key_lookup_fails"]))
+                logger.info("\t\t\tDelay buffer overflows:%u",
+                            np.sum(stats["delay_buffer_overflows"]))
+                logger.info("\t\t\tTask queue overflows:%u",
+                                np.sum(stats["task_queue_full"]))
+                logger.info("\t\t\tTimer event overruns:%u",
+                                np.sum(stats["timer_event_overflows"]))
+
+            # If population has a neural cluster
+            if pop._neural_cluster is not None:
+                neural_stats = pop.get_neural_statistics()
+                logger.info("\t\tNeurons")
+                logger.info("\t\t\tTask queue overflows:%u",
+                                np.sum(neural_stats["task_queue_full"]))
+                logger.info("\t\t\tTimer event overruns:%u",
+                                np.sum(neural_stats["timer_event_overflows"]))
 
     def _build(self, duration_ms):
         # Convert dt into microseconds and divide by
@@ -360,7 +375,7 @@ class State(common.control.BaseState):
         logger.info("Allocating neuron clusters")
         for pop_id, pop in enumerate(self.populations):
             logger.debug("\tPopulation:%s", pop.label)
-            pop._create_neural_cluster(hardware_timestep_us,
+            pop._create_neural_cluster(pop_id, hardware_timestep_us,
                                        duration_timesteps, self.frontend)
 
         logger.info("Allocating synapse clusters")

@@ -14,8 +14,19 @@ dt = 1.0
 nest = False
 spinnaker = True
 current = True
-record_gsyn = not current
+record_input = True
 spinnaker_config = defaultdict(dict)
+
+def record_input(population):
+    # If we should record input
+    if record_input:
+        # If this is a conductance model, record excitatory input conductance
+        if not current:
+            population.record("gsyn_exc")
+        # Otherwise, if the neuron model supports current
+        # recording, record excitatory input current
+        elif "isyn_exc" in population.celltype.recordable:
+            population.record("isyn_exc")
 
 def simulate(sim, setup_kwargs):
     sim.setup(timestep=dt, **setup_kwargs)
@@ -33,8 +44,7 @@ def simulate(sim, setup_kwargs):
     if record_voltages:
         pop_a.sample(1).record("v")
 
-    if record_gsyn:
-        pop_a.sample(1).record("gsyn_exc")
+    record_input(pop_a.sample(1))
 
     pop_b = sim.Population(num_neurons, neuron_b,
                            label="pop_b")
@@ -44,8 +54,7 @@ def simulate(sim, setup_kwargs):
     if record_voltages:
         pop_b.sample(1).record("v")
 
-    if record_gsyn:
-        pop_b.sample(1).record("gsyn_exc")
+    record_input(pop_b.sample(1))
 
     # Build list connector that sweeps delay space
     proj = sim.Projection(pop_a, pop_b, sim.OneToOneConnector(),
@@ -99,7 +108,7 @@ legacy_kwargs = { "color": "green", "alpha": 0.5 }
 num_axes = 2
 if record_voltages:
     num_axes += 2
-if record_gsyn:
+if record_input:
     num_axes += 2
 
 figure, axes = plt.subplots(num_axes, sharex=True)
@@ -116,17 +125,28 @@ for l, d in iteritems(data):
         plot_spiketrains(axes[i], p.segments[0], **d[1])
 
 # Loop through all simulator's output data
+signal_name_axis = {}
+axis_idx = 2
 for d in itervalues(data):
     # Loop through recorded populations and plot spike trains
-    axis_idx = 2
     for pop_idx, p in enumerate(d[0]):
         for sig_idx, a in enumerate(p.segments[0].analogsignalarrays):
-            axes[axis_idx].set_title("Population %s %s" % ("A" if pop_idx == 0 else "B", a.name))
-            axes[axis_idx].set_ylabel("%s / %s" % (a.name, a.units._dimensionality.string))
+            # If an axis hasn't already been assigned to this variable
+            signal_key = "%u_%s" % (pop_idx, a.name)
+            if not signal_key in signal_name_axis:
+                # Assign next available axis
+                axis = signal_name_axis[signal_key] = axes[axis_idx]
+                axis_idx += 1
 
-            plot_signal(axes[axis_idx], a, 0, **d[1])
+                # Configure title and label
+                axis.set_title("Population %s %s" % ("A" if pop_idx == 0 else "B", a.name))
+                axis.set_ylabel("%s / %s" % (a.name, a.units._dimensionality.string))
+            # Otherwise, extract assigned axis
+            else:
+                axis = signal_name_axis[signal_key]
 
-            axis_idx += 1
+            # Plot signal on chosen axis
+            plot_signal(axis, a, 0, **d[1])
 
 axes[-1].set_xlim((0, duration))
 

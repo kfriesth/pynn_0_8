@@ -3,10 +3,10 @@
 // Standard includes
 #include <cstdint>
 
-// Common includes
-#include "../../../common/exp_decay_lut.h"
-#include "../../../common/fixed_point_number.h"
-#include "../../../common/log.h"
+// Rig CPP common includes
+#include "rig_cpp_common/exp_decay_lut.h"
+#include "rig_cpp_common/fixed_point_number.h"
+#include "rig_cpp_common/log.h"
 
 // Namespaces
 using namespace Common::FixedPointNumber;
