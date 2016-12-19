@@ -99,10 +99,19 @@ public:
     LOG_PRINT(LOG_LEVEL_INFO, "\tPlasticity::WeightDependences::Additive::ReadSDRAMData");
 
     // Read region parameters
-    m_A2Plus = *reinterpret_cast<int32_t*>(region++);
-    m_MinusA2Minus = -*reinterpret_cast<int32_t*>(region++);
+    U032 a2Plus = *region++;
+    U032 a2Minus = *region++;
     m_MinWeight = *reinterpret_cast<int32_t*>(region++);
     m_MaxWeight = *reinterpret_cast<int32_t*>(region++);
+
+    // Multiply A2+ and A2- by weight range
+    // **NOTE** shift down by 32 bits as A2+ and A2- are in U0.32,
+    // m_MinWeight and m_MaxWeight are in runtime-defined weight format
+    // and we want the result to be left in the runtime-defined weight format
+    // **NOTE** 64-bit casting as result of multiplication is going to be 48-bit
+    const int32_t weightRange = m_MaxWeight - m_MinWeight;
+    m_A2Plus = ((int64_t)a2Plus * (int64_t)weightRange) >> 32;
+    m_MinusA2Minus = -(((int64_t)a2Minus * (int64_t)weightRange) >> 32);
 
     LOG_PRINT(LOG_LEVEL_INFO, "\t\tA2+:%d, -A2-:%d, Min weight:%d, Max weight:%d",
               m_A2Plus, m_MinusA2Minus, m_MinWeight, m_MaxWeight);

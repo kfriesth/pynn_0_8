@@ -15,7 +15,7 @@ from utils import Args, InputVertex
 
 # Import functions
 from pkg_resources import resource_filename
-from six import iteritems, iterkeys
+from six import iteritems, iterkeys, itervalues
 from utils import (get_model_executable_filename, load_regions, split_slice)
 
 logger = logging.getLogger("pynn_spinnaker")
@@ -123,13 +123,14 @@ class SynapseCluster(object):
         "input_buffer_overflows",
         "key_lookup_fails",
         "delay_buffer_overflows",
+        "delay_buffer_fetch_fails",
         "task_queue_full",
         "timer_event_overflows",
     )
 
-    def __init__(self, sim_timestep_ms, timer_period_us, sim_ticks,
-                 max_delay_ms, config, post_pop_size, synapse_model,
-                 receptor_index, synaptic_projections,
+    def __init__(self, sim_timestep_ms, timer_period_us, realtime_proportion,
+                 sim_ticks, max_delay_ms, config, post_pop_size,
+                 synapse_model, receptor_index, synaptic_projections,
                  frontend, post_synaptic_width):
         # Dictionary of regions
         self.regions = {}
@@ -138,9 +139,12 @@ class SynapseCluster(object):
         self.regions[Regions.key_lookup] = regions.KeyLookupBinarySearch()
         self.regions[Regions.output_buffer] = regions.OutputBuffer()
         self.regions[Regions.delay_buffer] = regions.DelayBuffer(
-            1E6,
             sim_timestep_ms, max_delay_ms)
         self.regions[Regions.back_prop_input] = regions.SDRAMBackPropInput()
+
+        # Split population slice
+        self.post_slices = split_slice(post_pop_size, post_synaptic_width)
+
         self.regions[Regions.connection_builder] = regions.ConnectionBuilder(
             sim_timestep_ms)
         self.regions[Regions.statistics] = regions.Statistics(
@@ -163,9 +167,6 @@ class SynapseCluster(object):
             self.regions[Regions.profiler] =\
                 regions.Profiler(config.num_profile_samples)
 
-        # Split population slice
-        self.post_slices = split_slice(post_pop_size, post_synaptic_width)
-
         logger.debug("\t\tSynapse model:%s, Receptor index:%u",
                      synapse_model.__class__.__name__, receptor_index)
 
@@ -177,6 +178,16 @@ class SynapseCluster(object):
 
         # Cache synapse model
         self.synapse_model = synapse_model
+
+        # Calculate the constant overhead for each
+        # simulation timestep and thus the number
+        # of cycles available for row processing
+        constant_overhead = (self.synapse_model._constant_cpu_overhead *
+                             (1000.0 / sim_timestep_ms))
+        core_cpu_cycles = 200E6 - constant_overhead
+
+        # Scale CPU cycles by realtime proportion
+        core_cpu_cycles /= realtime_proportion
 
         # Loop through the post-slices
         self.generate_matrix_on_chip = False
@@ -203,7 +214,7 @@ class SynapseCluster(object):
                                  str(pre_vertex.neuron_slice))
 
                     # Estimate max dimensions of sub-matrix
-                    max_cols, max_sub_rows, max_sub_row_length =\
+                    max_cols, max_sub_rows, max_total_sub_row_length =\
                         proj._estimate_max_dims(pre_vertex.neuron_slice,
                                                 post_slice)
 
@@ -215,15 +226,13 @@ class SynapseCluster(object):
 
                     # Estimate CPU cycles required to process sub-matrix
                     cpu_cycles = proj._estimate_spike_processing_cpu_cycles(
-                        pre_vertex.neuron_slice, post_slice,
-                        pre_rate=proj.pre.spinnaker_config.mean_firing_rate,
-                        post_rate=proj.post.spinnaker_config.mean_firing_rate)
+                        pre_vertex.neuron_slice, post_slice)
 
                     # Estimate size of matrix
                     synaptic_matrix = self.regions[Regions.synaptic_matrix]
                     sdram_bytes = synaptic_matrix.estimate_matrix_words(
                         len(pre_vertex.neuron_slice), max_cols,
-                        max_sub_rows, max_sub_row_length) * 4
+                        max_sub_rows, max_total_sub_row_length) * 4
 
                     logger.debug("\t\t\t\t\t\tCPU cycles:%u, SDRAM:%u bytes",
                                  cpu_cycles, sdram_bytes)
@@ -231,7 +240,7 @@ class SynapseCluster(object):
                     # If adding this projection would overtax the
                     # processor or overflow the 16mb limit on synaptic
                     # data imposed by the key lookup data structure
-                    if ((vert_cpu_cycles + cpu_cycles) >= 200E6
+                    if ((vert_cpu_cycles + cpu_cycles) >= core_cpu_cycles
                         or (vert_sdram_bytes + sdram_bytes) > (16 * 1024 * 1024)):
                         # Create vertex
                         vert = Vertex(post_slice, receptor_index,
@@ -301,8 +310,14 @@ class SynapseCluster(object):
         # for neuron ID and flush mask is located above that
         flush_mask = (1 << 10)
 
+        projection_state_dict = {}
+        for p in itertools.chain.from_iterable(itervalues(incoming_projections)):
+            if p._can_generate_on_chip:
+                projection_state_dict[p] = p._connector._get_projection_initial_state(
+                    p.pre.size, p.post.size)
+
         # Loop through all the postsynaptic slices in this synapse cluster
-        for post_slice in self.post_slices:
+        for post_slice_index, post_slice in enumerate(self.post_slices):
             logger.debug("\t\t\tPost slice:%s", str(post_slice))
 
             # Get 'column' of vertices in this postsynaptic slice
@@ -331,9 +346,13 @@ class SynapseCluster(object):
                     pre_pop_on_chip_proj[pre_pop] = incoming_from_pre
 
                     # Loop through projections to generate on chip and update
-                    # weight range based on maximum weight estimates
+                    # weight range based on minimum and maximum weight estimate
+                    # **NOTE** this is important e.g. for
+                    # distributed inhibitory weights
                     for proj in incoming_from_pre:
-                        weight_range.update(proj._max_weight_estimate)
+                        weight_min, weight_max = proj._weight_range_estimate
+                        weight_range.update(weight_min)
+                        weight_range.update(weight_max)
                 # Otherwise
                 else:
                     # Create list of lists to contain matrix rows
@@ -433,7 +452,8 @@ class SynapseCluster(object):
                     v.post_neuron_slice, sub_matrix_props,
                     host_sub_matrix_rows, chip_sub_matrix_projs,
                     matrix_placements, weight_fixed_point, v.out_buffers,
-                    back_prop_in_buffers, flush_mask)
+                    back_prop_in_buffers, flush_mask, post_slice_index,
+                    projection_state_dict)
 
                 # Load regions
                 v.region_memory = load_regions(
@@ -480,7 +500,7 @@ class SynapseCluster(object):
             self.statistic_names)
 
     def read_synaptic_matrices(self, pre_pop, names, sim_timestep_ms,
-                               routing_info):
+                               is_inhibitory, routing_info):
         # Get the synaptic matrix region
         region = self.regions[Regions.synaptic_matrix]
 
@@ -502,7 +522,7 @@ class SynapseCluster(object):
                 sub_matrices.append(
                     region.read_sub_matrix(pre_n_vert, post_s_vert, names,
                                            region_mem, sim_timestep_ms,
-                                           routing_info))
+                                           is_inhibitory, routing_info))
 
         return sub_matrices
 
@@ -513,7 +533,8 @@ class SynapseCluster(object):
                               host_sub_matrix_rows, chip_sub_matrix_projs,
                               matrix_placements,
                               weight_fixed_point, out_buffers,
-                              back_prop_in_buffers, flush_mask):
+                              back_prop_in_buffers, flush_mask,
+                              post_slice_index, projection_state_dict):
         region_arguments = defaultdict(Args)
 
         # Add kwargs for regions that require them
@@ -554,5 +575,9 @@ class SynapseCluster(object):
             post_vertex_slice
         region_arguments[Regions.connection_builder].kwargs["weight_fixed_point"] =\
             weight_fixed_point
+        region_arguments[Regions.connection_builder].kwargs["post_slice_index"] =\
+            post_slice_index
+        region_arguments[Regions.connection_builder].kwargs["projection_state_dict"] =\
+            projection_state_dict
 
         return region_arguments

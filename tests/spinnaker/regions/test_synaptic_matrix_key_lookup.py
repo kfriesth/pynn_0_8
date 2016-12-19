@@ -11,6 +11,7 @@ from pynn_spinnaker.spinnaker.regions import (ExtendedPlasticSynapticMatrix,
                                               KeyLookupBinarySearch,
                                               PlasticSynapticMatrix,
                                               StaticSynapticMatrix)
+from pynn_spinnaker.spinnaker.spinnaker_population_config import SpinnakerPopulationConfig
 from rig.bitfield import BitField
 
 # Import globals
@@ -58,7 +59,7 @@ def test_matrix_process(pre_size, pre_vert_size, post_slice, row_length,
     np.random.seed(123456)
 
     # Create a mock pre_population connected with a random weight matrix
-    pre_pop = mock.Mock()
+    pre_pop = mock.Mock(spinnaker_config=SpinnakerPopulationConfig())
     pre_pop_sub_rows = {pre_pop: _generate_random_matrix(pre_size, post_slice,
                                                          row_length, False)}
 
@@ -118,7 +119,7 @@ def test_matrix_process(pre_size, pre_vert_size, post_slice, row_length,
         for pre_n_vert in incoming_connections[pre_pop]:
             # Read sub-matrix back
             synapses = np.hstack(synaptic_matrix_region.read_sub_matrix(
-                pre_n_vert, post_s_vert, names, fp, sim_timestep_ms))
+                pre_n_vert, post_s_vert, names, fp, sim_timestep_ms, False))
 
             # Loop through original rows we wrote
             orig_rows =\

@@ -33,6 +33,16 @@ class PlasticSynapticMatrix(SynapticMatrix):
     # --------------------------------------------------------------------------
     # Private methods
     # --------------------------------------------------------------------------
+    def _estimate_num_ext_words(self, max_sub_rows, max_total_sub_row_length):
+        # Standard header and presynaptic state are required for each sub-row
+        header = (self.NumHeaderWords + self.pre_state_words) * max_sub_rows
+
+        # In the worst case each half-word array will have half a
+        # word of padding and there are two arrays in each sub-row.
+        # Therefore maximum size is one word per synapse
+        # and one padding word per sub-row
+        return header + max_total_sub_row_length + max_sub_rows
+
     def _get_num_row_words(self, num_synapses):
         # Both control and plastic words are stored as seperate
         # arrays of 16-bit elements so numbers of words

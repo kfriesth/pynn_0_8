@@ -105,7 +105,8 @@ class ConnectionBuilder(Region):
     # Region methods
     # --------------------------------------------------------------------------
     def sizeof(self, post_vertex_slice, sub_matrix_props,
-               chip_sub_matrix_projs, weight_fixed_point):
+               chip_sub_matrix_projs, weight_fixed_point,
+               post_slice_index, projection_state_dict):
         """Get the size requirements of the region in bytes.
 
         Parameters
@@ -134,12 +135,12 @@ class ConnectionBuilder(Region):
         # Slice sub matrices to generate on chip out from end of sub matrix properties
         chip_sub_matrix_props = sub_matrix_props[-len(chip_sub_matrix_projs):]
 
-        # Count number of RNGs
-        num_rngs = len(_get_native_rngs(chip_sub_matrix_projs))
-        assert num_rngs <= 1
+        # Get list of RNGs
+        native_rngs = _get_native_rngs(chip_sub_matrix_projs)
+        assert len(native_rngs) <= 1
 
-        # Fixed size consists of seed for each RNG and connection count
-        size = 4 + (self.SeedWords * 4)
+        # Fixed size consists of connection count, post slice index
+        size = 8
 
         # Loop through projections
         for prop, proj in zip(chip_sub_matrix_props, chip_sub_matrix_projs):
@@ -147,6 +148,11 @@ class ConnectionBuilder(Region):
             synapse_type = proj[0].synapse_type
             synaptic_matrix = synapse_type._synaptic_matrix_region_class
             connector = proj[0]._connector
+
+            size += 4 # pre slice index
+
+            # Add words for seed
+            size += self.SeedWords * 4
 
             # Add words for key and type hashes to size
             size += (7 * 4)
@@ -165,7 +171,8 @@ class ConnectionBuilder(Region):
         return size
 
     def write_subregion_to_file(self, fp, post_vertex_slice, sub_matrix_props,
-                                chip_sub_matrix_projs, weight_fixed_point):
+                                chip_sub_matrix_projs, weight_fixed_point,
+                                post_slice_index, projection_state_dict):
         """Write a portion of the region to a file applying the formatter.
 
         Parameters
@@ -191,16 +198,27 @@ class ConnectionBuilder(Region):
         rngs = _get_native_rngs(chip_sub_matrix_projs)
         assert len(rngs) <= 1
 
-        # Write seed
-        seed = np.random.randint(0x7FFFFFFF,
-                                 size=self.SeedWords).astype(np.uint32)
-        fp.write(seed.tostring())
-
-        # Write number of matrices
-        fp.write(struct.pack("I", num_chip_matrices))
+        # Write number of matrices, index of start of post_vertex_slice
+        fp.write(struct.pack("II", num_chip_matrices, post_vertex_slice.start))
 
         # Loop through projections
         for prop, proj in zip(chip_sub_matrix_props, chip_sub_matrix_projs):
+
+            # Write index of pre_slice
+            fp.write(struct.pack("I", prop.pre_slice_index))
+
+            # Generate four word base seed for SpiNNaker KISS RNG
+            # Note, if we instantiate more than 54,000 KISS RNGs
+            # with random seeds, it is probable that two will share
+            # the same state for one of their sub-RNGs.
+            if len(rngs):
+                seed = rngs[0]._seed_generator.randint(
+                2**32, dtype=np.uint32, size=self.SeedWords)
+            else:
+                seed = np.zeros(4, dtype=np.uint32)
+
+            fp.write(seed.tostring())
+
             # Extract required properties from projections
             synapse_type = proj[0].synapse_type
             synaptic_matrix = synapse_type._synaptic_matrix_region_class
@@ -230,7 +248,9 @@ class ConnectionBuilder(Region):
 
             # Apply parameter map to connector parameters and write to region
             fp.write(lazy_param_map.apply_attributes(
-                connector, connector._on_chip_param_map).tostring())
+                connector, connector._on_chip_param_map,
+                context=projection_state_dict[proj[0]], post_slice=post_vertex_slice,
+                pre_slice=prop.pre_n_slice).tostring())
 
             # Write delay parameter scaled to convert to timesteps and
             # with fixed point of zero to round to nearest timestep

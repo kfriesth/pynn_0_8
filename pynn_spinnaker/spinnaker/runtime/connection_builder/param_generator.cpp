@@ -1,5 +1,8 @@
 #include "param_generator.h"
 
+// Standard includes
+#include <algorithm>
+
 // Rig CPP common includes
 #include "rig_cpp_common/fixed_point_number.h"
 #include "rig_cpp_common/arm_intrinsics.h"
@@ -95,8 +98,15 @@ ConnectionBuilder::ParamGenerator::NormalClipped::NormalClipped(uint32_t *&regio
 {
   m_Mu = *reinterpret_cast<int32_t*>(region++);
   m_Sigma = *reinterpret_cast<int32_t*>(region++);
-  m_Low = *reinterpret_cast<int32_t*>(region++);
-  m_High = *reinterpret_cast<int32_t*>(region++);
+
+  //**YUCK** weight distributions may lie between negative bounds
+  // BUT for unsigned synaptic matrices the signs will be flipped
+  // so 'low' may infact be larger than 'high' leading to an infinite loop
+  int32_t low = *reinterpret_cast<int32_t*>(region++);
+  int32_t high = *reinterpret_cast<int32_t*>(region++);
+  m_Low = std::min(low, high);
+  m_High = std::max(low, high);
+
   LOG_PRINT(LOG_LEVEL_INFO, "\t\t\tNormal clipped parameter: mu:%d, sigma:%d, low:%d, high:%d",
             m_Mu, m_Sigma, m_Low, m_High);
 }

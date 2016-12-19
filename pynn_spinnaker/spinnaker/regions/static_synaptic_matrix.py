@@ -27,6 +27,11 @@ class StaticSynapticMatrix(SynapticMatrix):
     # --------------------------------------------------------------------------
     # Private methods
     # --------------------------------------------------------------------------
+    def _estimate_num_ext_words(self, max_sub_rows, max_total_sub_row_length):
+        # Because there's no need for padding,
+        # simply add header words for each sub-row
+        return (self.NumHeaderWords * max_sub_rows) + max_total_sub_row_length
+
     def _get_num_row_words(self, num_synapses):
         return self.NumHeaderWords + num_synapses
 

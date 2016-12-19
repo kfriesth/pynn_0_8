@@ -91,10 +91,10 @@ def simulate_spinnaker():
     import pynn_spinnaker as sim
 
     logger = logging.getLogger("pynn_spinnaker")
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
     logger.addHandler(logging.StreamHandler())
 
-    setup_kwargs = {"spinnaker_hostname": "192.168.1.1"}
+    setup_kwargs = {}
 
     return simulate(sim, setup_kwargs)
 

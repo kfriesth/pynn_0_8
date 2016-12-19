@@ -1,6 +1,7 @@
 # Import modules
 import lazyarray as la
 from spinnaker import lazy_param_map
+import numpy as np
 from scipy.stats import norm, expon
 
 # Import classes
@@ -11,15 +12,19 @@ from pyNN.errors import InvalidParameterValueError
 from six import iteritems
 
 
-def _estimate_max_value_normal(parameters):
-    estimated_max = norm.ppf(1-1e-6)
-    return parameters["mu"] + parameters["sigma"] * estimated_max
+def _estimate_normal_range(parameters):
+    return (parameters["mu"] + (parameters["sigma"] * norm.ppf(1e-6)),
+            parameters["mu"] + (parameters["sigma"] * norm.ppf(1-1e-6)))
 
-def _estimate_max_value_normal_clipped(parameters):
-    return min(_estimate_max_value_normal(parameters), parameters["high"])
+def _estimate_normal_clipped_range(parameters):
+    normal_range = _estimate_normal_range(parameters)
 
-def _estimate_max_value_exponential(parameters):
-    return parameters["beta"] * expon.ppf(1-1e-6)
+    return (max(parameters["low"], normal_range[0]),
+            min(parameters["high"], normal_range[1]))
+
+def _estimate_exponential_range(parameters):
+    return (parameters["beta"] * expon.ppf(1e-6),
+            parameters["beta"] * expon.ppf(1-1e-6))
 
 def _check_parameters_normal(parameters):
     msg = "Expected positive sigma"
@@ -71,13 +76,13 @@ class NativeRNG(NativeRNG):
     # **THINK** should this be moved out of NativeRNG
     # for more general estimation of max delays etc
 
-    _dist_estimate_max_value = {
-        "uniform":        lambda parameters: parameters["high"],
-        "uniform_int":    lambda parameters: parameters["high"],
-        "normal":         _estimate_max_value_normal,
-        "normal_clipped": _estimate_max_value_normal_clipped,
-        "normal_clipped_to_boundary": _estimate_max_value_normal_clipped,
-        "exponential":    _estimate_max_value_exponential
+    _dist_estimate_value_range = {
+        "uniform":        lambda parameters: (parameters["low"], parameters["high"]),
+        "uniform_int":    lambda parameters: (parameters["low"], parameters["high"]),
+        "normal":         _estimate_normal_range,
+        "normal_clipped": _estimate_normal_clipped_range,
+        "normal_clipped_to_boundary": _estimate_normal_clipped_range,
+        "exponential":    _estimate_exponential_range
     }
 
     # Functions to check that the distribution parameters are valid.
@@ -94,6 +99,8 @@ class NativeRNG(NativeRNG):
     def __init__(self, host_rng, seed=None):
         # Superclass
         super(NativeRNG, self).__init__(seed)
+
+        self._seed_generator = np.random.RandomState(seed=seed)
 
         # Cache RNG to use on the host
         assert host_rng is not None
@@ -112,13 +119,13 @@ class NativeRNG(NativeRNG):
     def _supports_dist(self, distribution):
         return distribution in self._dist_param_maps
 
-    def _estimate_dist_max_value(self, distribution, parameters):
+    def _estimate_dist_range(self, distribution, parameters):
          # Check translation and parameter map exists for this distribution
         if not self._supports_dist(distribution):
             raise NotImplementedError("SpiNNaker native RNG does not support"
                                       "%s distributions" % distribution)
         else:
-            return self._dist_estimate_max_value[distribution](parameters)
+            return self._dist_estimate_value_range[distribution](parameters)
 
     def _check_dist_parameters(self, distribution, parameters):
         if not self._supports_dist(distribution):

@@ -82,14 +82,14 @@ def apply(lazy_params, param_map, size, **kwargs):
 
     return params
 
-def apply_attributes(obj, param_map):
+def apply_attributes(obj, param_map, **kwargs):
     # Build dictionary of non-constant
     # parameters values from object attributes
     params = {p[0]: la.larray(getattr(obj, p[0]))
               for p in param_map if len(p) > 2}
 
     # Apply parameter map to dictionary
-    return apply(params, param_map, 1)
+    return apply(params, param_map, 1, **kwargs)
 
 def integer(values, **kwargs):
     vals = deepcopy(values)

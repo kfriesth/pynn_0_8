@@ -66,23 +66,26 @@ bool ReadConnectionBuilderRegion(uint32_t *region, uint32_t)
 {
   LOG_PRINT(LOG_LEVEL_INFO, "ReadConnectionBuilderRegion");
 
-  // Read RNG seed
-  uint32_t seed[MarsKiss64::StateSize];
-  LOG_PRINT(LOG_LEVEL_TRACE, "\tSeed:");
-  for(unsigned int s = 0; s < MarsKiss64::StateSize; s++)
-  {
-    seed[s] = *region++;
-    LOG_PRINT(LOG_LEVEL_TRACE, "\t\t%u", seed[s]);
-  }
-
-  // Create RNG with this seed
-  // **TODO** multiple RNGs multiple seeds
-  MarsKiss64 rng(seed);
-
   // Loop through matrices to generate
   const uint32_t numMatricesToGenerate = *region++;
+  const uint32_t postVertexSlice = *region++;
   for(unsigned int i = 0; i < numMatricesToGenerate; i++)
   {
+    // Index of pre slice
+    uint32_t preVertexSlice = *region++;
+
+    // Read RNG seed for this matrix
+    uint32_t seed[MarsKiss64::StateSize];
+    LOG_PRINT(LOG_LEVEL_TRACE, "\tSeed:");
+    for(unsigned int s = 0; s < MarsKiss64::StateSize; s++)
+    {
+      seed[s] = *region++;
+      LOG_PRINT(LOG_LEVEL_TRACE, "\t\t%u", seed[s]);
+    }
+
+    // Create RNG with this seed for this matrix
+    MarsKiss64 rng(seed);
+
     // Read basic matrix properties
     const uint32_t key = *region++;
     const uint32_t sizeWords = *region++;
@@ -131,7 +134,7 @@ bool ReadConnectionBuilderRegion(uint32_t *region, uint32_t)
                                     matrixRowSynapses,
                                     g_AppWords[AppWordWeightFixedPoint],
                                     g_AppWords[AppWordNumPostNeurons],
-                                    sizeWords, numRows,
+                                    sizeWords, numRows, postVertexSlice, preVertexSlice,
                                     connectorGenerator, delayGenerator, weightGenerator,
                                     rng))
       {
@@ -220,7 +223,9 @@ extern "C" void c_main()
   // Register connector generators with factories
   LOG_PRINT(LOG_LEVEL_INFO, "Connector generators");
   REGISTER_FACTORY_CLASS("AllToAllConnector", ConnectorGenerator, AllToAll);
+  REGISTER_FACTORY_CLASS("OneToOneConnector", ConnectorGenerator, OneToOne);
   REGISTER_FACTORY_CLASS("FixedProbabilityConnector", ConnectorGenerator, FixedProbability);
+  REGISTER_FACTORY_CLASS("FixedTotalNumberConnector", ConnectorGenerator, FixedTotalNumber);
 
   // Register parameter generators with factories
   LOG_PRINT(LOG_LEVEL_INFO, "Parameter generators");

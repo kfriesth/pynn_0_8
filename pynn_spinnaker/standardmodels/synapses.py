@@ -33,8 +33,9 @@ class StaticSynapse(synapses.StaticSynapse):
     # SpiNNaker synapse processor of this type handle
     _max_post_neurons_per_core = 1024
 
-    # How many CPU cycles are spent doing non-row processing things
-    _constant_cpu_overhead = 3.85E6
+    # How many CPU cycles are spent doing
+    # non-row processing things every time step
+    _constant_cpu_overhead = 3.85E3
 
     # What format of synaptic matrix does this synapse type require
     _synaptic_matrix_region_class = regions.StaticSynapticMatrix
@@ -92,8 +93,9 @@ class STDPMechanism(synapses.STDPMechanism):
     # SpiNNaker synapse_processor of this type handle
     _max_post_neurons_per_core = 512
 
-    # How many CPU cycles are spent doing non-row processing things
-    _constant_cpu_overhead = 11.15E6
+    # How many CPU cycles are spent doing
+    # non-row processing things every time step
+    _constant_cpu_overhead = 11.15E3
 
     # What format of synaptic matrix does this synapse type require
     _synaptic_matrix_region_class = regions.PlasticSynapticMatrix
@@ -225,8 +227,8 @@ class SpikePairRule(synapses.SpikePairRule):
                                       num_entries=256, time_shift=0)),
         ("tau_minus", "256i2", partial(lazy_param_map.s411_exp_decay_lut,
                                        num_entries=256, time_shift=0)),
-        ("a_plus", "i4", lazy_param_map.s32_fixed_point),
-        ("a_minus", "i4", lazy_param_map.s32_fixed_point),
+        ("a_plus", "u4", lazy_param_map.u032),
+        ("a_minus", "u4", lazy_param_map.u032),
     ]
 
     _comparable_param_names = ("tau_plus", "tau_minus", "A_plus", "A_minus")
@@ -253,8 +255,8 @@ class Vogels2011Rule(synapses.Vogels2011Rule):
         ("rho", "i4", lazy_param_map.s2011),
         ("tau", "256i2", partial(lazy_param_map.s411_exp_decay_lut,
                                  num_entries=256, time_shift=0)),
-        ("eta", "i4", lazy_param_map.s32_fixed_point),
-        ("eta", "i4", lazy_param_map.s32_fixed_point),
+        ("eta", "u4", lazy_param_map.u032),
+        ("eta", "u4", lazy_param_map.u032),
     ]
 
     _comparable_param_names = ("tau", "eta", "rho")

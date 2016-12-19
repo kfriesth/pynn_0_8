@@ -3,11 +3,13 @@
 ###################################################
 
 import sys
+import numpy as np
 from sim_params import simulator_params, system_params
 sys.path.append(system_params['backend_path'])
 sys.path.append(system_params['pyNN_path'])
 from network_params import *
 import logging
+import pickle
 import pyNN
 import time
 from neo.io import PyNNTextIO
@@ -44,7 +46,6 @@ end_sim = time.time()
 if sim.rank() == 0 :
     print('Simulation took %g s' % (end_sim - start_sim,))
 
- 
 start_writing = time.time()
 for layer in n.pops :
     for pop in n.pops[layer] :

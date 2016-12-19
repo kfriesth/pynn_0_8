@@ -16,7 +16,6 @@ simulator_params = {
       'threads'           : 1,
       'sim_duration'      : 1000., # ms
       'min_delay'         : 0.1,     # ms
-      'spalloc_num_boards': 6,
     }
 }
 

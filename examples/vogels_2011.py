@@ -72,7 +72,7 @@ def build_network(ie_synapse, e_mean_firing_rate):
 
 
 # Build static network
-sim.setup(timestep=1.0)
+sim.setup(timestep=1.0, spinnaker_hostname="192.168.1.1")
 static_ex_pop,_ = build_network(sim.StaticSynapse(weight=0.0, delay=1.0), 300.0)
 
 # Run for 1s
@@ -82,7 +82,8 @@ sim.run(1000)
 static_data = static_ex_pop.get_data()
 
 # Clear simulation state
-sim.setup(min_delay=1.0, max_delay=7.0, timestep=1.0)
+sim.setup(min_delay=1.0, max_delay=7.0, timestep=1.0,
+          spinnaker_hostname="192.168.1.1")
 
 # Build inhibitory plasticity  model
 stdp_model = sim.STDPMechanism(

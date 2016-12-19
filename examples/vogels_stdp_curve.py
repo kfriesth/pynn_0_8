@@ -93,7 +93,7 @@ axis.set_xlabel(r"$(t_{j} - t_{i}/ms)$")
 axis.set_ylabel(r"$(\frac{\Delta w_{ij}}{w_{ij}})$", rotation = "horizontal", size = "xx-large")
 
 # Simulate
-end_w = simulate(sim, {"spinnaker_hostname": "192.168.1.1"})
+end_w = simulate(sim, {})
 print end_w
 
 # Convert end weight to weight change and plot

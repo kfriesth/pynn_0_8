@@ -19,6 +19,9 @@ class Network:
         self.w = create_weight_matrix()
         model = getattr(sim, 'IF_curr_exp')
         script_rng = NumpyRNG(seed=6508015, parallel_safe=parallel_safe)
+        if simulator == "pynn_spinnaker":
+            script_rng = sim.NativeRNG(script_rng)
+            
         distr = RandomDistribution('normal', [V0_mean, V0_sd], rng=script_rng)
 
         # Create cortical populations
@@ -34,21 +37,27 @@ class Network:
                 self.pops[layer][pop].annotate(type=pop)
                 this_pop = self.pops[layer][pop]
 
+                #if simulator == "pynn_spinnaker":
+                #    if layer == "L4" or layer == "L6":
+                #        this_pop.spinnaker_config.mean_firing_rate = 40.0
+                #    else:
+                #        this_pop.spinnaker_config.mean_firing_rate = 15.0
+
                 # Spike recording
                 if record_fraction:
-                    num_spikes = round(this_pop.size * frac_record_spikes)
+                    num_spikes = int(round(this_pop.size * frac_record_spikes))
                 else:
                     num_spikes = n_record
-                this_pop[0:num_spikes].record('spikes')
+                this_pop.sample(num_spikes).record('spikes')
 
                 # Membrane potential recording
                 if record_v:
                     if record_fraction:
-                        num_v = round(this_pop.size * frac_record_v)
+                        num_v = int(round(this_pop.size * frac_record_v))
 
                     else:
                         num_v = n_record_v
-                    this_pop[0:num_v].record('v')
+                    this_pop.sample(num_spikes).record('v')
 
         # Create thalamic population
         if thalamic_input:
@@ -87,6 +96,7 @@ class Network:
         if sim.rank() == 0:
             print('w: %s' % self.w)
 
+        self.projections = []
         for target_layer in layers :
             for target_pop in pops :
                 target_index = structure[target_layer][target_pop]
@@ -112,23 +122,26 @@ class Network:
                              (n_target * thal_params['n_thal']))) / n_target
                     FixedTotalNumberConnect(sim, self.thalamic_population,
                                             this_pop, K_thal, w_ext, w_rel * w_ext,
-                                            d_mean['E'], d_sd['E'])
+                                            d_mean['E'], d_sd['E'],
+                                            script_rng)
                 # Recurrent inputs
                 for source_layer in layers :
                     for source_pop in pops :
                         source_index=structure[source_layer][source_pop]
                         if sim.rank() == 0:
                             print('creating connections from %s%s to %s%s' % (source_layer, source_pop, target_layer, target_pop))
-                        weight=self.w[target_index][source_index]
+                        weight=float(self.w[target_index][source_index])
                         if source_pop == 'E' and source_layer == 'L4' and target_layer == 'L23' and target_pop == 'E':
                             w_sd=weight * w_rel_234
                         else:
                             w_sd=abs(weight * w_rel)
-                        FixedTotalNumberConnect(sim, self.pops[source_layer][source_pop],
+                        p = FixedTotalNumberConnect(sim, self.pops[source_layer][source_pop],
                                                 self.pops[target_layer][target_pop],\
                                                 K_full[target_index][source_index] * K_scaling,
                                                 weight, w_sd,
-                                                d_mean[source_pop], d_sd[source_pop])
+                                                d_mean[source_pop], d_sd[source_pop],
+                                                script_rng)
+                        self.projections.append(p)
 
 
 def create_weight_matrix():

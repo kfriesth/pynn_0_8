@@ -37,14 +37,30 @@ class ExtendedPlasticSynapticMatrix(SynapticMatrix):
     # --------------------------------------------------------------------------
     # Private methods
     # --------------------------------------------------------------------------
+    def _estimate_num_ext_words(self, max_sub_rows, max_total_sub_row_length):
+        # Standard header and presynaptic state are required for each sub-row
+        header = (self.NumHeaderWords + self.pre_state_words) * max_sub_rows
+
+        # In the worst case each array of plastic BYTES will require
+        # 3 bytes of padding to align to a word boundary and each array
+        # of control HALF-WORDS will require 1 half-word = 2 bytes.
+        synapse_padding_bytes = (3 + 2) * max_sub_rows
+
+        # Each synapse in the row will require 2 bytes for its control
+        # half-word and whatever the synapse type required
+        synapse_data_bytes = max_total_sub_row_length * (self.synapse_bytes + 2)
+
+        # Convert to words and add header
+        synapse_bytes = synapse_padding_bytes + synapse_data_bytes
+        return header + int(math.ceil(float(synapse_bytes) / 4.0))
+
     def _get_num_row_words(self, num_synapses):
         # Calculate size of control and plastic word arrays
         num_control_words, num_plastic_words =\
             self._get_num_array_words(num_synapses)
 
-        # Complete row consists of standard header, time of last update,
-        # time of last pre-synaptic spike, pre-synaptic trace and
-        # arrays of control words and plastic weights
+        # Complete row consists of standard header, presynaptic state
+        #  and arrays of control words and plastic weights
         return self.NumHeaderWords + self.pre_state_words +\
             num_control_words + num_plastic_words
 

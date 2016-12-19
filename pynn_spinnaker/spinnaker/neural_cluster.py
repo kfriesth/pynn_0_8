@@ -56,13 +56,14 @@ class Regions(enum.IntEnum):
 # ----------------------------------------------------------------------------
 class Vertex(MachineVertex, AbstractHasAssociatedBinary,
              AbstractProvidesNKeysForPartition, AbstractStartsSynchronized):
-    def __init__(self, neuron_slice, sdram, app_name):
+    def __init__(self, neuron_slice, vert_index, sdram, app_name):
         self.neuron_slice = neuron_slice
 
         self.input_verts = []
         self.back_prop_out_buffers = None
         self.region_memory = None
         self.app_name = app_name
+        self.vert_index = vert_index
 
         # Superclass
         # **NOTE** as vertex partitioning is already done,
@@ -225,8 +226,8 @@ class NeuralCluster(object):
         self.verts = []
         for vert_id, neuron_slice in enumerate(neuron_slices):
             # Create vertex
-            vert = Vertex(neuron_slice, self._estimate_sdram(neuron_slice),
-                          neuron_app)
+            vert = Vertex(neuron_slice, vert_id,
+                          self._estimate_sdram(neuron_slice), neuron_app)
 
             # Add to frontend and verts list
             frontend.add_machine_vertex(vert)

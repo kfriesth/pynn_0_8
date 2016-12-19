@@ -220,10 +220,15 @@ class Population(common.Population):
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
     def _read_synaptic_matrices(self, pre_pop, synapse_type, names):
+        # Is the receptor type inhibitory
+        # **YUCK** this is not a great test
+        is_inhibitory = (synapse_type.receptor == "inhibitory")
+
         # Return synaptic weights from correct synapse cluster
         synapse_cluster = self._synapse_clusters[synapse_type]
         return synapse_cluster.read_synaptic_matrices(
             pre_pop, names, float(self._simulator.state.dt),
+            is_inhibitory,
             self._simulator.state.frontend.routing_infos)
 
     def _read_recorded_vars(self, vars_to_read):
@@ -291,17 +296,24 @@ class Population(common.Population):
                     # Loop through list of projections
                     total_cpu_cycles = 0.0
                     for proj in synaptic_projections:
-                        # Estimate CPU cycles required to process sub-matrix
+                        # Estimate CPU cycles per second required to process sub-matrix
                         cpu_cycles = proj._estimate_spike_processing_cpu_cycles(
-                            UnitStrideSlice(0, proj.pre.size), post_slice,
-                            pre_rate=proj.pre.spinnaker_config.mean_firing_rate,
-                            post_rate=proj.post.spinnaker_config.mean_firing_rate)
+                            UnitStrideSlice(0, proj.pre.size), post_slice)
 
                         total_cpu_cycles += cpu_cycles
 
+                    # Calculate the constant overhead for each
+                    # simulation timestep and thus the number
+                    # of cycles available for row processing
+                    constant_overhead = (s_type.model._constant_cpu_overhead *
+                                         (1000.0 / self._simulator.state.dt))
+                    available_core_cpu_cycles = 200E6 - constant_overhead
+
+                    # Scale CPU cycles by realtime proportion
+                    available_core_cpu_cycles /= self._simulator.state.realtime_proportion
+
                     # Calculate presynaptic (i) 'height' of synapse processors
                     # required to handle the synaptic processing of post_slice
-                    available_core_cpu_cycles = 200E6 - s_type.model._constant_cpu_overhead
                     num_i_cores = int(math.ceil(float(total_cpu_cycles) / float(available_core_cpu_cycles)))
 
                     # Calculate the postsynaptic (j) 'width' of synapse
@@ -415,11 +427,6 @@ class Population(common.Population):
     def _estimate_constraints(self, hardware_timestep_us):
         logger.debug("\t\tFinding maximum synapse J constraints")
 
-        # Determine the fraction of 1ms that the hardware timestep is.
-        # This is used to scale all time-driven estimates
-        timestep_mul = min(1.0, float(hardware_timestep_us) / 1000.0)
-        logger.debug("\t\tTimestep multiplier:%f", timestep_mul)
-
          # Loop through synapse types
         self._synapse_j_constraints = {}
         dc_projections = []
@@ -510,6 +517,7 @@ class Population(common.Population):
 
                 # Create synapse cluster
                 c = SynapseCluster(self._simulator.state.dt, timer_period_us,
+                                   self._simulator.state.realtime_proportion,
                                    simulation_ticks,
                                    self._simulator.state.max_delay,
                                    self.spinnaker_config, self.size,

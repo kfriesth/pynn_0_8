@@ -9,6 +9,9 @@ Connection method classes for PyNN SpiNNaker
 import numpy as np
 import scipy
 from spinnaker import lazy_param_map
+import lazyarray as la
+
+from pyNN.random import RandomDistribution
 
 # Import classes
 from pyNN.connectors import (AllToAllConnector,
@@ -26,6 +29,31 @@ from pyNN.connectors import (AllToAllConnector,
                              CloneConnector,
                              ArrayConnector)
 
+# TODO for handling allow_self_connections=False we need the allow_self
+# connections flag, to test if post_slice and pre_slice overlap,
+# and modify context['N']
+def _draw_num_connections(context, post_slice, pre_slice, **kwargs):
+    nsample = len(post_slice) * len(pre_slice)
+
+    if context['n'] == 0:
+        sample = 0
+    elif nsample == context['N']:
+        sample = context['n']
+    elif context['with_replacement']:
+        sample = np.random.binomial(n = context['n'],
+                                    p = float(nsample) / context['N'])
+    else:
+        sample = np.random.hypergeometric(ngood = context['n'],
+                                          nbad = context['N'] - context['n'],
+                                          nsample = nsample)
+    context['n'] -= sample
+    context['N'] -= nsample
+
+    return la.larray(sample, shape=(1,))
+
+# TODO for handling allow_self_connections=False, modify value here?
+def _submat_size(context, post_slice, pre_slice, **kwargs):
+    return la.larray(len(post_slice) * len(pre_slice), shape=(1,))
 
 # ----------------------------------------------------------------------------
 # AllToAllConnector
@@ -36,18 +64,24 @@ class AllToAllConnector(AllToAllConnector):
     _directly_connectable = False
 
     # If this connector can be generated on chip, parameter map to use
-    _on_chip_param_map = []
+    _on_chip_param_map = [("allow_self_connections", "u4", lazy_param_map.integer)]
+
+    # Are the statistics of this connector the same across all slices
+    _cachable = True
 
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        return len(post_slice)
+        # We know the number of synapses per sub-row. Use a distribution that
+        # can only return that value
+        num_synapses = len(post_slice)
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        return len(post_slice)
+        return scipy.stats.randint(num_synapses, num_synapses + 1)
+
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return None
 
 # ----------------------------------------------------------------------------
 # FixedProbabilityConnector
@@ -58,21 +92,25 @@ class FixedProbabilityConnector(FixedProbabilityConnector):
     _directly_connectable = False
 
     # If this connector can be generated on chip, parameter map to use
-    _on_chip_param_map = [("p_connect", "u4", lazy_param_map.u032)]
+    _on_chip_param_map = [("allow_self_connections", "u4", lazy_param_map.integer),
+                          ("p_connect", "u4", lazy_param_map.u032)]
+
+    # Are the statistics of this connector the same across all slices
+    _cachable = True
 
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Each connection is made with probability p_connect
-        # Return the row-length that 99.99% of rows will be shorter than
-        return int(scipy.stats.binom.ppf(
-            0.9999, len(post_slice), self.p_connect))
+        # There are len(post_slice) possible connections in the sub-row, each
+        # formed with probability self.p_connect
+        n = len(post_slice)
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        return int(round(self.p_connect * float(len(post_slice))))
+        return scipy.stats.binom(n=n, p=self.p_connect)
+
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return None
 
 # ----------------------------------------------------------------------------
 # OneToOneConnector
@@ -82,16 +120,21 @@ class OneToOneConnector(OneToOneConnector):
     # using an in-memory buffer rather than by sending multicast packets
     _directly_connectable = True
 
+    # Are the statistics of this connector the same across all slices
+    _cachable = False
+
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        return 1 if pre_slice.overlaps(post_slice) else 0
+        # We know the number of synapses per sub-row. Use a distribution that
+        # can only return that value
+        p = pre_slice.intersection(post_slice) / float(len(pre_slice))
+        return scipy.stats.bernoulli(p)
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        return 1 if pre_slice.overlaps(post_slice) else 0
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return None
 
 # ----------------------------------------------------------------------------
 # FromListConnector
@@ -100,6 +143,9 @@ class FromListConnector(FromListConnector):
     # Can suitable populations connected with this connector be connected
     # using an in-memory buffer rather than by sending multicast packets
     _directly_connectable = False
+
+    # Are the statistics of this connector the same across all slices
+    _cachable = False
 
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
@@ -118,21 +164,18 @@ class FromListConnector(FromListConnector):
         # Return histogram of masked pre-indices
         return np.bincount(pre_indices[mask].astype(int))
 
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Get the row length histogram of slice
+        # Use the histogram of per-row synapse number within this row
+        # to construct a discrete distribution with the computed probabilities
         hist = self._get_slice_row_length_histogram(pre_slice, post_slice)
+        vs = range(len(hist))
+        ps = hist / float(hist.sum())
+        return scipy.stats.rv_discrete(values = (vs, ps))
 
-        # Return maximum row length
-        return np.amax(hist);
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return None
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        # Get the row length histogram of slice
-        hist = self._get_slice_row_length_histogram(pre_slice, post_slice)
-
-        # Return average row length
-        return np.average(hist)
 
 # ----------------------------------------------------------------------------
 # FixedNumberPostConnector
@@ -142,28 +185,44 @@ class FixedNumberPostConnector(FixedNumberPostConnector):
     # using an in-memory buffer rather than by sending multicast packets
     _directly_connectable = False
 
+    _on_chip_param_map = [("allow_self_connections", "u4", lazy_param_map.integer)]
+
+    # Are the statistics of this connector the same across all slices
+    _cachable = True
+
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Each pre-synaptic neuron connects to n of the M=post_size
-        # post-synaptic neurons.
-        # Determining which of those n connections are within this post_slice is
-        # a matter of sampling N=len(post_slice) times without replacement.
-        # The number within the row and post_slice are
-        # hypergeometrically distributed.
 
-        # Return the row-length that 99.99% of rows will be shorter than
-        return int(scipy.stats.hypergeom.ppf(
-            0.9999, M=post_size, n=self.n, N=len(post_slice)))
+        N = len(post_slice)
+        M = post_size
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        # How large a fraction of the full post populations is this
-        post_fraction = float(len(post_slice)) / float(post_size)
+        # There are n connections amongst the M=post_size possible
+        # connections per row
 
-        return int(self.n * post_fraction)
+        # If the connections are made with replacement, then each of the n
+        # connections has an independent p=float(N)/M probability of being
+        # selected, and the number of synapses in the sub-row is binomially
+        # distributed
+
+        # If the connections are made without replacement, then
+        # n of the M possible connections are made, and we take a sample
+        # of size N from those M. The number of synapses in the sub-row
+        # is hypergeometrically distributed
+
+        # scipy.stats.binom does not handle the n=0 case
+        if self.n == 0:
+            return scipy.stats.randint(0, 1)
+        elif self.with_replacement:
+            return scipy.stats.binom(n=self.n, p=float(N)/M)
+        else:
+            return scipy.stats.hypergeom(M=M, N=N, n=self.n)
+
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return None
+
 
 # ----------------------------------------------------------------------------
 # FixedNumberPreConnector
@@ -173,22 +232,43 @@ class FixedNumberPreConnector(FixedNumberPreConnector):
     # using an in-memory buffer rather than by sending multicast packets
     _directly_connectable = False
 
+    _on_chip_param_map = [("allow_self_connections", "u4", lazy_param_map.integer)]
+
+    # Are the statistics of this connector the same across all slices
+    _cachable = True
+
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # Calculate the probability that any of the
-        # n synapses in the column will be within this row
-        prob_in_row = float(self.n) / pre_size
 
-        # Return the row-length that 99.99% of rows will be shorter than
-        return int(scipy.stats.binom.ppf(
-            0.9999, len(post_slice), prob_in_row))
+        N = len(post_slice)
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        return int(len(post_slice) * float(self.n) / float(pre_size))
+        # There are n connections amongst the M=pre_size possible
+        # connections per column
+
+        # In the with replacement case, in each column, the number of connections
+        # that end up in this row are distributed as Binom(n, 1.0/pre_size).
+        # The number that end up in the sub-row are a sum of N such binomials,
+        # which equals Binom(n*N, 1.0/pre_size)
+
+        # In the without replacement case, the number of connections that end up
+        # in a single column of this row is distributed as Bernoulli(n/pre_size).
+        # The number that end up in this sub-row are distributed as
+        # Binom(N, n/float(pre_size))
+
+        # scipy.stats.binom does not handle the n=0 case
+        if self.n == 0:
+            return scipy.stats.randint(0, 1)
+        elif self.with_replacement:
+            return scipy.stats.binom(n=self.n * N, p=1.0/pre_size)
+        else:
+            return scipy.stats.binom(n=N, p=self.n/float(pre_size))
+
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return None
+
 
 # ----------------------------------------------------------------------------
 # FixedTotalNumberConnector
@@ -198,28 +278,44 @@ class FixedTotalNumberConnector(FixedTotalNumberConnector):
     # using an in-memory buffer rather than by sending multicast packets
     _directly_connectable = False
 
+    # Are the statistics of this connector the same across all slices
+    _cachable = True
+    
+    _on_chip_param_map = [("allow_self_connections", "u4", lazy_param_map.integer),
+                          ("with_replacement", "u4", lazy_param_map.integer),
+                          (_draw_num_connections, "u4"),
+                          (_submat_size, "u4")]
+
     # --------------------------------------------------------------------------
     # Internal SpiNNaker methods
     # --------------------------------------------------------------------------
-    def _estimate_max_row_synapses(self, pre_slice, post_slice,
+    def _row_synapses_distribution(self, pre_slice, post_slice,
                                    pre_size, post_size):
-        # There are n connections amongst the M=pre_size*post_size possible
-        # connections.
-        # Determining which of those n connections are within this row and
-        # post_slice is a matter of sampling N=len(post_slice) times without
-        # replacement. The number within the row and post_slice are
-        # hypergeometrically distributed.
 
         M = pre_size * post_size
         N = len(post_slice)
 
-        return int(scipy.stats.hypergeom.ppf(0.9999, M=M, N=N, n=self.n))
+        # There are n connections amongst the M=pre_size*post_size possible
+        # connections
 
-    def _estimate_mean_row_synapses(self, pre_slice, post_slice,
-                                    pre_size, post_size):
-        # How large a fraction of the full post populations is this
-        pre_fraction = float(len(pre_slice)) / float(pre_size)
-        post_fraction = float(len(post_slice)) / float(post_size)
+        # If the connections are made with replacement, then each of the n
+        # connections has an independent p=float(N)/M probability of being
+        # selected, and the number of synapses in the sub-row is binomially
+        # distributed
 
-        # Multiply these by the total number of synapses
-        return int(pre_fraction * post_fraction * float(self.n) / float(pre_size))
+        # If the connections are made without replacement, then
+        # n of the M possible connections are made, and we take a sample
+        # of size N from those M. The number of synapses in the sub-row
+        # is hypergeometrically distributed
+
+        # scipy.stats.binom does not handle n=0
+        if self.n == 0:
+            return scipy.stats.randint(0, 1)
+        elif self.with_replacement:
+            return scipy.stats.binom(n=self.n, p=float(N)/M)
+        else:
+            return scipy.stats.hypergeom(M=M, N=N, n=self.n)
+
+    def _get_projection_initial_state(self, pre_size, post_size):
+        return {'n': self.n, 'N': pre_size * post_size,
+                'with_replacement':self.with_replacement}

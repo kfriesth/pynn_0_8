@@ -14,7 +14,10 @@ from ..utils import combine_row_offset_length, extract_row_offset_length
 
 logger = logging.getLogger("pynn_spinnaker")
 
-SubMatrix = namedtuple("SubMatrix", ["key", "mask", "size_words", "max_cols"])
+SubMatrix = namedtuple("SubMatrix", ["key", "mask", "pre_n_slice", "pre_slice_index",
+                                     "size_words", "max_cols",
+                                     "max_delay_rows_per_second"])
+
 
 # ------------------------------------------------------------------------------
 # SynapticMatrix
@@ -45,7 +48,7 @@ class SynapticMatrix(Region):
         """Get the size requirements of the region in bytes.
 
         Parameters
-        ----------
+        ----------haha when
         sub_matrix_props : list of :py:class:`._SubMatrix`
             Properties of the sub matrices to be written
             to synaptic matrix region
@@ -78,7 +81,7 @@ class SynapticMatrix(Region):
             Properties of the sub matrices to be written
             to synaptic matrix region
         host_sub_matrix_rows : list of list of numpy arrays
-            Partitioned matrix rows generated on hostto be written to SpiNNaker
+            Partitioned matrix rows generated on host to be written to SpiNNaker
         matrix_placements : list of integers
             Offsets in words at which sub_matrices will be
             written into synaptic matrix region
@@ -143,7 +146,7 @@ class SynapticMatrix(Region):
     # Public methods
     # --------------------------------------------------------------------------
     def estimate_matrix_words(self, num_pre, max_cols, max_sub_rows,
-                              max_sub_row_length):
+                              max_total_sub_row_length):
         # Because of the number of bits available for storing
         # max_cols, rows with 0 synapses cannot be represented
         max_cols = max(1, max_cols)
@@ -152,13 +155,12 @@ class SynapticMatrix(Region):
         # the ragged portion of the synaptic matrix
         ragged_words = self._get_num_row_words(max_cols)
 
-        # Calculate the maximum size in words of the delays
-        # sub-rows associated with any pre-synaptic neuron
-        delay_words = (max_sub_rows *
-                       self._get_num_row_words(max_sub_row_length))
+        # Estimate the number of words requires for the sub-rows
+        ext_words = self._estimate_num_ext_words(max_sub_rows,
+                                                 max_total_sub_row_length)
 
         # Calculate final size
-        return num_pre * (ragged_words + delay_words)
+        return num_pre * (ragged_words + ext_words)
 
     def partition_matrices(self, routing_info, post_vertex_slice,
                            pre_pop_sub_rows, incoming_connections):
@@ -183,6 +185,7 @@ class SynapticMatrix(Region):
                 # with this presynaptic neuron vert
                 vert_sub_rows = sub_rows[pre_n_vert.neuron_slice.python_slice]
 
+                max_sub_rows = 0
                 max_cols = 1
                 num_ext_words = 0
                 any_connections = False
@@ -222,6 +225,10 @@ class SynapticMatrix(Region):
                                         np.split(sub_row, sub_row_sections))
                                     if e == 0 or len(r) > 0]
 
+                        # Update maximum number of sub-rows
+                        max_sub_rows = max(max_sub_rows,
+                                           len(vert_sub_rows[i]) - 1)
+
                         # Calculate number of extension words thos
                         num_ext_words += self._get_num_ext_words(
                             len(vert_sub_rows[i]), sub_row_lengths,
@@ -240,11 +247,22 @@ class SynapticMatrix(Region):
                     size_words = num_ext_words +\
                         (len(vert_sub_rows) * self._get_num_row_words(max_cols))
 
+                    # Estimate the maximum number of delay rows the
+                    # synapse processor handling this sub-matrix
+                    # will be required to process each second
+                    max_delay_rows_per_second =\
+                        (max_sub_rows * len(pre_n_vert.neuron_slice) *
+                         pre_pop.spinnaker_config.mean_firing_rate)
+
                     # Add sub matrix to list
                     sub_matrix_props.append(
                         SubMatrix(pre_n_vert.get_routing_key(routing_info),
                                   pre_n_vert.get_routing_mask(routing_info),
-                                  size_words, max_cols))
+                                  pre_n_vert.neuron_slice,
+                                  pre_n_vert.vert_index,
+                                  size_words, max_cols,
+                                  max_delay_rows_per_second))
+
                     sub_matrix_rows.append(vert_sub_rows)
 
         return sub_matrix_props, sub_matrix_rows
@@ -270,7 +288,7 @@ class SynapticMatrix(Region):
             # Loop through presynaptic vertices
             for pre_n_vert in pre_n_verts:
                 # Estimate max dimensions of sub-matrix
-                max_cols, max_sub_rows, max_sub_row_length =\
+                max_cols, max_sub_rows, max_total_sub_row_length =\
                     proj._estimate_max_dims(pre_n_vert.neuron_slice,
                                             post_vertex_slice)
 
@@ -279,19 +297,30 @@ class SynapticMatrix(Region):
                     # Estimate the maximum size of this in SDRAM
                     size_words = self.estimate_matrix_words(
                         len(pre_n_vert.neuron_slice), max_cols,
-                        max_sub_rows, max_sub_row_length)
+                        max_sub_rows, max_total_sub_row_length)
+
+                    # Estimate the maximum number of delay rows the
+                    # synapse processor handling this sub-matrix
+                    # will be required to process each second
+                    max_delay_rows_per_second =\
+                        (max_sub_rows * len(pre_n_vert.neuron_slice) *
+                         proj.pre.spinnaker_config.mean_firing_rate)
 
                     # Add sub matrix to list
                     sub_matrix_props.append(
                         SubMatrix(pre_n_vert.get_routing_key(routing_info),
                                   pre_n_vert.get_routing_mask(routing_info),
-                                  size_words, max(1, max_cols)))
+                                  pre_n_vert.neuron_slice,
+                                  pre_n_vert.vert_index,
+                                  size_words, max(1, max_cols),
+                                  max_delay_rows_per_second))
+                                  
                     sub_matrix_projs.append((proj, len(pre_n_vert.neuron_slice)))
 
         return sub_matrix_props, sub_matrix_projs
 
     def read_sub_matrix(self, pre_n_vert, post_s_vert, names, region_mem,
-                        sim_timestep_ms, routing_info):
+                        sim_timestep_ms, is_inhibitory, routing_info):
         # Find the matrix properties and placement of sub-matrix
         # associated with pre-synaptic neuron vertex
         vert_matrix_prop, vert_matrix_placement = next((
@@ -336,10 +365,14 @@ class SynapticMatrix(Region):
 
         # Build data type for rows
         dtype = np.dtype(
-            [(n, np.float32 if n == "weight" or n == "delay" else np.uint32)
+            [(n, np.float64 if n == "weight" or n == "delay" else np.uint32)
              for n in names])
         logger.debug("\tUsing row dtype:%s, weight fixed point:%u",
                      dtype, post_s_vert.weight_fixed_point)
+
+        # Downloaded weights should be negated
+        # if they are unsigned and inhibitory
+        negate_weights = (not self.signed_weight and is_inhibitory)
 
         # Loop through matrix rows
         synapses = []
@@ -347,7 +380,7 @@ class SynapticMatrix(Region):
             # Read row
             row = self._read_row(i, r, pre_n_vert.neuron_slice,
                                  post_s_vert.post_neuron_slice,
-                                 weight_to_float, dtype)
+                                 weight_to_float, dtype, negate_weights)
 
             # If delays are required, scale into simulation timesteps
             if "delay" in dtype.names:
@@ -375,7 +408,7 @@ class SynapticMatrix(Region):
                 # Read next extension row
                 row = self._read_row(i, ext_row_data, pre_n_vert.neuron_slice,
                                     post_s_vert.post_neuron_slice,
-                                    weight_to_float, dtype)
+                                    weight_to_float, dtype, negate_weights)
 
                 # If delays are required, add total extended delay
                 # and scale into simulation timesteps
@@ -395,7 +428,7 @@ class SynapticMatrix(Region):
     # Private methods
     # --------------------------------------------------------------------------
     def _read_row(self, pre_idx, row_words, pre_slice, post_slice,
-                  weight_to_float, dtype):
+                  weight_to_float, dtype, negate_weights):
         num_synapses = row_words[0]
 
         # Create empty array to hold synapses
@@ -413,6 +446,10 @@ class SynapticMatrix(Region):
         # Read synapses
         self._read_synapses(row_words[3:], weight_to_float, dtype, synapses)
 
+        # If weights are required and we should negate them, do so
+        if "weight" in dtype.names and negate_weights:
+            synapses["weight"] = -synapses["weight"]
+
         # If post-synaptic indices are required,
         # add post-synaptic slice start to them
         if "postsynaptic_index" in dtype.names:
@@ -421,7 +458,7 @@ class SynapticMatrix(Region):
         return next_row_delay, next_row_offset, next_row_length, synapses
 
     def _write_row(self, row, next_row, next_row_offset,
-                             float_to_weight, destination):
+                   float_to_weight, destination):
         # Write actual length of row (in synapses)
         num_synapses = len(row[1])
         destination[0] = num_synapses

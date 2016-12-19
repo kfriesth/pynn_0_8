@@ -80,7 +80,7 @@ class InputVertex(MachineVertex, AbstractHasAssociatedBinary,
         # input vertex actually has output buffers
         assert post_slice.overlaps(self.post_neuron_slice)
         assert self.out_buffers is not None
-        
+
         # The number of neurons-orth of input
         # transferred should match smallest slice
         num_neurons = min(len(post_slice), len(self.post_neuron_slice))
@@ -116,6 +116,9 @@ class UnitStrideSlice(namedtuple("UnitStrideSlice", ["start", "stop"])):
     # ------------------------------------------------------------------------
     def overlaps(self, other):
         return (self.start < other.stop) and (self.stop > other.start)
+
+    def intersection(self, other):
+        return max(0, min(self.stop, other.stop) - max(self.start, other.start))
 
     # ------------------------------------------------------------------------
     # Properties
